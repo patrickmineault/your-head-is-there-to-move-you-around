@@ -204,7 +204,10 @@ def download(root, url=None):
     if os.path.exists(out_file) and os.stat(out_file).st_size == 1798039870:
         print(f"Already fetched {zip_name}")
     else:
-        os.makedirs(os.path.join(root, 'zip'))
+        try:
+            os.makedirs(os.path.join(root, 'zip'))
+        except FileExistsError:
+            pass
 
         # Instead of downloading in Python and taking up a bunch of memory, use curl.
         process = subprocess.Popen(['wget', 
