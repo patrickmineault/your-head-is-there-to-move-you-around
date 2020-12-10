@@ -8,26 +8,23 @@ from torch import optim
 
 import os
 
-if __name__ == "__main__":
+def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception2d'):
     # Train a network
-    root = '/storage/crcns/pvc1/'
-    train_folder = '/storage/trained/xception2d'
-
     try:
-        os.makedirs(root)
+        os.makedirs(data_root)
     except FileExistsError:
         pass
 
     try:
-        os.makedirs(train_folder)
+        os.makedirs(output_dir)
     except FileExistsError:
         pass
 
-    pvc1_loader.download(root)
-    trainset = pvc1_loader.PVC1(os.path.join(root, 'crcns-ringach-data'), split='train', ntau=6)
+    pvc1_loader.download(data_root)
+    trainset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), split='train', ntau=6)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=1, shuffle=True)
 
-    testset = pvc1_loader.PVC1(os.path.join(root, 'crcns-ringach-data'), split='test', ntau=6)
+    testset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), split='test', ntau=6)
     testloader = torch.utils.data.DataLoader(trainset, batch_size=1, shuffle=True)
 
     subnet = xception.Xception()
@@ -37,6 +34,10 @@ if __name__ == "__main__":
 
     criterion = nn.MSELoss()
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device == 'cpu':
+        print("No CUDA! Sad!")
 
     for epoch in range(1):  # loop over the dataset multiple times
         running_loss = 0.0
@@ -59,4 +60,7 @@ if __name__ == "__main__":
                     (epoch + 1, i + 1, running_loss / 2000))
                 running_loss = 0.0
 
-    torch.save(net.state_dict(), train_folder)
+    torch.save(net.state_dict(), output_dir)
+
+if __name__ == "__main__":
+    main()
