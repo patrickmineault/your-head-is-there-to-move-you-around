@@ -8,6 +8,8 @@ from torch import optim
 
 import os
 
+from gradient_utils.metrics import MetricsLogger
+
 def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception2d'):
     # Train a network
     try:
@@ -20,6 +22,9 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
     except FileExistsError:
         pass
 
+    logger = MetricsLogger()
+    logger.add_gauge("mse_train")
+    logger.add_gauge("mse_test")
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device == 'cpu':
@@ -34,7 +39,7 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=1, shuffle=True)
 
     testset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), split='test', ntau=6)
-    testloader = torch.utils.data.DataLoader(trainset, batch_size=1, shuffle=True)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=1, shuffle=True)
 
     print("Init models")
     subnet = xception.Xception()
@@ -53,7 +58,6 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
         print(f"Epoch {epoch}")
         running_loss = 0.0
         for i, data in enumerate(trainloader, 0):
-            print(f"Batch {i}")
             # get the inputs; data is a list of [inputs, labels]
             (X, rg), labels = data
 
@@ -71,6 +75,21 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
                 print('[%d, %5d] loss: %.3f' %
                     (epoch + 1, i + 1, running_loss / 2000))
                 running_loss = 0.0
+
+        if epoch % 5 == 0:
+            total_loss = 0
+            for i, data in enumerate(testloader, 0):
+                (X, rg), labels = data
+                outputs = net((X.to(device=device), rg.to(device=device)))
+                total_loss += criterion(outputs, labels.to(device=device))
+
+            print(f"CV loss {total_loss:.2f}")
+
+            logger['mse_test'] = total_loss
+            logger.push_metrics()
+
+            # After a full epoch, print out the status
+            torch.save(net.state_dict(), output_dir + '_{epoch}.ckpt')
 
     torch.save(net.state_dict(), output_dir)
 
