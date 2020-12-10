@@ -55,8 +55,9 @@ class LowRankNet(nn.Module):
         assert self.xgrid.shape[1] == self.width_out
         self.xgrid = self.xgrid.view(1, self.height_out, self.width_out)
         self.ygrid = self.ygrid.view(1, self.height_out, self.width_out)
-        self.register_buffer('xgrid', self.xgrid, False)
-        self.register_buffer('ygrid', self.xgrid, False)
+        
+        self.register_buffer('xgrid_', self.xgrid, False)
+        self.register_buffer('ygrid_', self.xgrid, False)
 
     def forward(self, inputs):
         x, targets = inputs
@@ -93,24 +94,5 @@ class LowRankNet(nn.Module):
             results.append(r.view(front_dims[0], -1))
         return torch.stack(results, 2)
         
-if __name__ == "__main__":
-    # Test out separable net
-    import xception
-    basenet = xception.Xception()
-    X = torch.randn(4, 3, 224, 224, 7)
-    outputs = [1, 3, 5]
-
-    net = LowRankNet(
-        basenet,
-        2,
-        6,
-        128,
-        14,
-        14, 
-        2
-    )
-
-    Y = net.forward((X, outputs))
-    assert Y.shape == (4, 6, 3)
     
         
