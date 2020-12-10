@@ -55,6 +55,8 @@ class LowRankNet(nn.Module):
         assert self.xgrid.shape[1] == self.width_out
         self.xgrid = self.xgrid.view(1, self.height_out, self.width_out)
         self.ygrid = self.ygrid.view(1, self.height_out, self.width_out)
+        self.register_buffer('xgrid', self.xgrid, False)
+        self.register_buffer('ygrid', self.xgrid, False)
 
     def forward(self, inputs):
         x, targets = inputs
