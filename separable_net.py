@@ -47,17 +47,17 @@ class LowRankNet(nn.Module):
         self.wb = nn.Parameter(torch.randn(self.ntargets))
 
         # Create the grid to evaluate the parameters on.
-        self.xgrid, self.ygrid = torch.meshgrid(
+        xgrid, ygrid = torch.meshgrid(
             torch.arange(0, self.width_out),
             torch.arange(0, self.height_out),
         )
-        assert self.xgrid.shape[0] == self.height_out
-        assert self.xgrid.shape[1] == self.width_out
-        self.xgrid = self.xgrid.view(1, self.height_out, self.width_out)
-        self.ygrid = self.ygrid.view(1, self.height_out, self.width_out)
+        assert xgrid.shape[0] == self.height_out
+        assert xgrid.shape[1] == self.width_out
+        xgrid = xgrid.view(1, self.height_out, self.width_out)
+        ygrid = ygrid.view(1, self.height_out, self.width_out)
         
-        self.register_buffer('xgrid_', self.xgrid, False)
-        self.register_buffer('ygrid_', self.xgrid, False)
+        self.register_buffer('xgrid', xgrid, False)
+        self.register_buffer('ygrid', ygrid, False)
 
     def forward(self, inputs):
         x, targets = inputs
@@ -93,6 +93,6 @@ class LowRankNet(nn.Module):
 
             results.append(r.view(front_dims[0], -1))
         return torch.stack(results, 2)
-        
+
     
         
