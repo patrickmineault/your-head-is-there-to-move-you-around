@@ -6,12 +6,28 @@ import torch
 from torch import nn
 from torch import optim
 
+import os
+
 if __name__ == "__main__":
     # Train a network
-    trainset = pvc1_loader.PVC1(split='train', ntau=6)
+    root = '/storage/crcns/pvc1/'
+    train_folder = '/storage/trained/xception2d'
+
+    try:
+        os.makedirs(root)
+    except FileExistsError:
+        pass
+
+    try:
+        os.makedirs(train_folder)
+    except FileExistsError:
+        pass
+
+    pvc1_loader.download(root)
+    trainset = pvc1_loader.PVC1(os.path.join(root, 'crcns-ringach-data'), split='train', ntau=6)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=1, shuffle=True)
 
-    testset = pvc1_loader.PVC1(split='test', ntau=6)
+    testset = pvc1_loader.PVC1(os.path.join(root, 'crcns-ringach-data'), split='test', ntau=6)
     testloader = torch.utils.data.DataLoader(trainset, batch_size=1, shuffle=True)
 
     subnet = xception.Xception()
@@ -22,8 +38,7 @@ if __name__ == "__main__":
     criterion = nn.MSELoss()
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
-    for epoch in range(2):  # loop over the dataset multiple times
-
+    for epoch in range(1):  # loop over the dataset multiple times
         running_loss = 0.0
         for i, data in enumerate(trainloader, 0):
             # get the inputs; data is a list of [inputs, labels]
@@ -43,3 +58,5 @@ if __name__ == "__main__":
                 print('[%d, %5d] loss: %.3f' %
                     (epoch + 1, i + 1, running_loss / 2000))
                 running_loss = 0.0
+
+    torch.save(net.state_dict(), train_folder)
