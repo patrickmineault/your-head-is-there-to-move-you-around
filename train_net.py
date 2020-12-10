@@ -8,8 +8,6 @@ from torch import optim
 
 import os
 
-from gradient_utils.metrics import MetricsLogger
-
 def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception2d'):
     # Train a network
     try:
@@ -21,10 +19,6 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
         os.makedirs(output_dir)
     except FileExistsError:
         pass
-
-    logger = MetricsLogger()
-    logger.add_gauge("mse_train")
-    logger.add_gauge("mse_test")
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device == 'cpu':
@@ -85,11 +79,8 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
 
             print(f"CV loss {total_loss:.2f}")
 
-            logger['mse_test'] = total_loss
-            logger.push_metrics()
-
             # After a full epoch, print out the status
-            torch.save(net.state_dict(), output_dir + '_{epoch}.ckpt')
+            torch.save(net.state_dict(), f'{output_dir}_{epoch}.ckpt')
 
     torch.save(net.state_dict(), output_dir)
 
