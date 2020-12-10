@@ -20,36 +20,47 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
     except FileExistsError:
         pass
 
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device == 'cpu':
+        print("No CUDA! Sad!")
+
+    print("Download data")
     pvc1_loader.download(data_root)
+
+    print("Loading data")
+
     trainset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), split='train', ntau=6)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=1, shuffle=True)
 
     testset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), split='test', ntau=6)
     testloader = torch.utils.data.DataLoader(trainset, batch_size=1, shuffle=True)
 
+    print("Init models")
     subnet = xception.Xception()
     net = separable_net.LowRankNet(subnet, 
                                    2, 
                                    trainset.total_electrodes, 128, 14, 14, trainset.ntau)
 
+    net.to(device=device)
+
     criterion = nn.MSELoss()
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device == 'cpu':
-        print("No CUDA! Sad!")
-
+    print("Fitting model")
     for epoch in range(1):  # loop over the dataset multiple times
+        print(f"Epoch {epoch}")
         running_loss = 0.0
         for i, data in enumerate(trainloader, 0):
+            print(f"Batch {i}")
             # get the inputs; data is a list of [inputs, labels]
             inputs, labels = data
 
             # zero the parameter gradients
             optimizer.zero_grad()
 
-            outputs = net(inputs)
-            loss = criterion(outputs, labels)
+            outputs = net(inputs.to(device=device))
+            loss = criterion(outputs, labels.to(device=device))
             loss.backward()
             optimizer.step()
 
@@ -63,4 +74,5 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
     torch.save(net.state_dict(), output_dir)
 
 if __name__ == "__main__":
+    print("Getting into main")
     main()
