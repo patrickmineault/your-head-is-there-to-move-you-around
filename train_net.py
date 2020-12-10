@@ -54,12 +54,12 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
         for i, data in enumerate(trainloader, 0):
             print(f"Batch {i}")
             # get the inputs; data is a list of [inputs, labels]
-            inputs, labels = data
+            (X, rg), labels = data
 
             # zero the parameter gradients
             optimizer.zero_grad()
 
-            outputs = net(inputs.to(device=device))
+            outputs = net((X.to(device=device), rg.to(device=device)))
             loss = criterion(outputs, labels.to(device=device))
             loss.backward()
             optimizer.step()
