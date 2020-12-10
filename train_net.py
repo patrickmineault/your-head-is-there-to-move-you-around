@@ -9,6 +9,7 @@ from torch import optim
 import os
 
 def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception2d'):
+    print("Main")
     # Train a network
     try:
         os.makedirs(data_root)
