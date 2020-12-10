@@ -211,7 +211,7 @@ def download(root, url=None):
 
         # Instead of downloading in Python and taking up a bunch of memory, use curl.
         process = subprocess.Popen(['wget', 
-                                    '--silent',
+                                    '--quiet',
                                     url + zip_name,
                                     '-O',
                                     out_file], 
