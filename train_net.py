@@ -38,6 +38,7 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
 
     print("Init models")
     subnet = xception.Xception()
+    subnet.to(device=device)
     net = separable_net.LowRankNet(subnet, 
                                    2, 
                                    trainset.total_electrodes, 128, 14, 14, trainset.ntau)
