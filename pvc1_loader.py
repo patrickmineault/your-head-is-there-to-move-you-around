@@ -127,7 +127,8 @@ class PVC1(torch.utils.data.Dataset):
 
             imgs.append(the_im[:, rgy, rgx])
 
-        X = np.stack(imgs, axis=-1).astype(np.float32)
+        # Center and normalize the zeros.
+        X = (np.stack(imgs, axis=-1).astype(np.float32) - 128.0) / 128.0
         mat_file = self.mat_files[tgt['key']]
         
         y = []
