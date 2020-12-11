@@ -2,6 +2,13 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+def mysoftplus(x, beta):
+    print(x.max())
+    print(beta.max())
+    return torch.where(abs(x) < 20, 
+                       1 / beta * torch.log(1 + torch.exp(beta * x)),
+                       torch.where( x < 0, 0.0 * x, x))
+
 class LowRankNet(nn.Module):
     """Creates a low-rank lagged network for prediction.
     
@@ -43,8 +50,9 @@ class LowRankNet(nn.Module):
         self.wy = nn.Parameter(torch.rand(self.rank, self.ntargets) * self.height_out)
         self.wsigmax = nn.Parameter(torch.randn(self.rank, self.ntargets))
         self.wsigmay = nn.Parameter(torch.randn(self.rank, self.ntargets))
-        self.wt = nn.Parameter(torch.randn(self.nt, self.ntargets))
+        self.wt = nn.Parameter(torch.randn(self.nt, self.ntargets) / self.nt)
         self.wb = nn.Parameter(torch.randn(self.ntargets))
+        self.wbeta = nn.Parameter(1 + torch.rand(self.ntargets))
 
         # Create the grid to evaluate the parameters on.
         self.xgrid, self.ygrid = torch.meshgrid(
@@ -53,8 +61,8 @@ class LowRankNet(nn.Module):
         )
         assert self.xgrid.shape[0] == self.height_out
         assert self.xgrid.shape[1] == self.width_out
-        self.xgrid = self.xgrid.view(1, self.height_out, self.width_out)
-        self.ygrid = self.ygrid.view(1, self.height_out, self.width_out)
+        self.xgrid = nn.Parameter(self.xgrid.view(1, self.height_out, self.width_out).float(), requires_grad=False)
+        self.ygrid = nn.Parameter(self.ygrid.view(1, self.height_out, self.width_out).float(), requires_grad=False)
 
     def forward(self, inputs):
         x, targets = inputs
@@ -79,6 +87,8 @@ class LowRankNet(nn.Module):
 
             ws = torch.exp(-(self.xgrid - self.wx[:, target].view(-1, 1, 1)) ** 2 / 2 / (0.5 + self.wsigmax[:, target].view(-1, 1, 1) ** 2) - 
                             (self.ygrid - self.wy[:, target].view(-1, 1, 1)) ** 2 / 2 / (0.5 + self.wsigmay[:, target].view(-1, 1, 1) ** 2))
+
+            ws = ws / (.1 + ws.sum())
             
             # ws has shape rank x height_out X width_out
             r = torch.tensordot(r, ws, ([1, 2, 3], [1, 2, 0]))
@@ -88,7 +98,11 @@ class LowRankNet(nn.Module):
                          self.wt[:, target].view(1, 1, -1), 
                          self.wb[target].view(1))
 
-            results.append(r.view(front_dims[0], -1))
+            #results.append(
+            #    mysoftplus(r.view(front_dims[0], -1), 
+            #               beta=F.softplus(self.wbeta[target]))
+            #)
+            results.append(F.relu(r.view(front_dims[0], -1)))
         return torch.stack(results, 2)
         
 if __name__ == "__main__":
