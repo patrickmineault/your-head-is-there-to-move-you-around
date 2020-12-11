@@ -48,6 +48,7 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
     criterion = nn.MSELoss()
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
+    display_freq = 10
     print("Fitting model")
     for epoch in range(1):  # loop over the dataset multiple times
         print(f"Epoch {epoch}")
@@ -66,9 +67,9 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
 
             # print statistics
             running_loss += loss.item()
-            if i % 2000 == 1999:    # print every 2000 mini-batches
+            if i % display_freq == 0:    # print every 2000 mini-batches
                 print('[%d, %5d] loss: %.3f' %
-                    (epoch + 1, i + 1, running_loss / 2000))
+                    (epoch + 1, i + 1, running_loss / display_freq))
                 running_loss = 0.0
 
         if epoch % 5 == 0:
