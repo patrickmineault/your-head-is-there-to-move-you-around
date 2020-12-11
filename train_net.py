@@ -13,11 +13,12 @@ import torch.autograd.profiler as profiler
 
 import os
 
-def save_state(net, title):
+def save_state(net, title, output_dir):
     datestr = str(datetime.datetime.now()).replace(':', '-')
-    torch.save(net.state_dict(), f'models/{title}-{datestr}.pt')
+    torch.save(net.state_dict(), os.path.join(output_dir, f'{title}-{datestr}.pt'))
 
-def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception2d'):
+def main(data_root='/storage/crcns/pvc1/', 
+         output_dir='/storage/trained/xception2d'):
     print("Main")
     # Train a network
     try:
@@ -46,6 +47,7 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
 
     testset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), split='test', ntau=6)
     testloader = torch.utils.data.DataLoader(testset, batch_size=1, shuffle=True)
+    testloader_iter = iter(testloader)
 
     print("Init models")
 
@@ -62,7 +64,10 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
     criterion = nn.MSELoss()
     optimizer = optim.SGD(net.parameters(), lr=3e-5, momentum=0.9)
 
-    n = 0
+    m, n = 0, 0
+    print_frequency = 25
+    test_loss = 0.0
+    
     try:
         for epoch in range(20):  # loop over the dataset multiple times
             running_loss = 0.0
@@ -105,16 +110,21 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
                     loss = criterion(outputs, labels)
                     writer.add_scalar('Loss/test', loss.item(), n)
 
+                    test_loss += loss.item()
+                    m += 1
+
+                    if m == print_frequency:
+                        print(f"Test accuracy: {test_loss /  print_frequency:.3f}")
+                        test_loss = 0
+                        m = 0
+
                 n += 1
 
                 if n % 10000 == 0:
-                    save_state(net, f'xception.ckpt{n}')
+                    save_state(net, os.path.join(output_dir, f'xception.ckpt{n}'), output_dir)
                     
     except KeyboardInterrupt:
-        save_state(net, f'xception.ckpt{n}')
-
-        torch.save(net.state_dict(), 
-        f'models/xception.{str(datetime.datetime.now())}.pt'.replace(':', '-'))
+        save_state(net, f'xception.ckpt{n}', output_dir)
 
 if __name__ == "__main__":
     print("Getting into main")

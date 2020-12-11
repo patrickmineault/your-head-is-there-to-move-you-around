@@ -9,7 +9,7 @@ import unittest
 class TestTrain(unittest.TestCase):
     def test_train(self):
         """Smoke test."""
-        train_net.main()
+        train_net.main('/tmp/data', '/tmp/models')
 
         self.assertTrue(True)
 
