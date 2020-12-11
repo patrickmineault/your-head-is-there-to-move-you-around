@@ -1,10 +1,14 @@
 import mat_utils
 
+import datetime
 import glob
 import matplotlib
 import matplotlib.image
 import numpy as np
 import os
+import requests
+import subprocess
+import time
 
 import torch.utils.data
 
@@ -181,6 +185,69 @@ def _movie_info(root):
                                   'root': root}
     
     return movie_info
+
+def download(root, url=None):
+    """Download the dataset to disk.
+    
+    Arguments:
+        root: root folder to download to.
+        url: the root URL to grab the data from.
+
+    Returns:
+        True if downloaded correctly
+    """
+    if url is None:
+        url = os.getenv('GCS_ROOT')
+
+    zip_name = 'crcns-pvc1.zip'
+
+    out_file = os.path.join(root, 'zip', zip_name)
+    if os.path.exists(out_file) and os.stat(out_file).st_size == 1798039870:
+        print(f"Already fetched {zip_name}")
+    else:
+        try:
+            os.makedirs(os.path.join(root, 'zip'))
+        except FileExistsError:
+            pass
+
+        # Instead of downloading in Python and taking up a bunch of memory, use curl.
+        process = subprocess.Popen(['wget', 
+                                    '--quiet',
+                                    url + zip_name,
+                                    '-O',
+                                    out_file], 
+                                    stdout=subprocess.DEVNULL)
+
+        t0 = datetime.datetime.now()
+        progress = '|\\-/'
+        while process.poll() is None:
+            dt = (datetime.datetime.now() - t0) / datetime.timedelta(seconds=.5)
+            char = progress[int(dt) % 4]
+            print('\r' + char, end='')
+            time.sleep(.5)
+        print('\n')
+
+        # Check everything good
+        if not os.path.exists(out_file):
+            # Something bad happened during download
+            print(f"Failed to download {zip_name}")
+            return False
+
+    # Now unzip the data if necessary.
+    if os.path.exists(os.path.join(root, 'crcns-ringach-data')):
+        print("Already unzipped")
+        return True
+    else:
+        process = subprocess.Popen(['unzip', 
+                                    out_file,
+                                    '-d',
+                                    root],
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.PIPE)
+
+        process.communicate()
+        return True
+    
 
 if __name__ == '__main__':
     dataset_train = PVC1(split='train')

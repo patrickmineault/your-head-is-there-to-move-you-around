@@ -55,14 +55,17 @@ class LowRankNet(nn.Module):
         self.wbeta = nn.Parameter(1 + torch.rand(self.ntargets))
 
         # Create the grid to evaluate the parameters on.
-        self.xgrid, self.ygrid = torch.meshgrid(
+        xgrid, ygrid = torch.meshgrid(
             torch.arange(0, self.width_out),
             torch.arange(0, self.height_out),
         )
-        assert self.xgrid.shape[0] == self.height_out
-        assert self.xgrid.shape[1] == self.width_out
-        self.xgrid = nn.Parameter(self.xgrid.view(1, self.height_out, self.width_out).float(), requires_grad=False)
-        self.ygrid = nn.Parameter(self.ygrid.view(1, self.height_out, self.width_out).float(), requires_grad=False)
+        assert xgrid.shape[0] == self.height_out
+        assert xgrid.shape[1] == self.width_out
+        xgrid = xgrid.view(1, self.height_out, self.width_out)
+        ygrid = ygrid.view(1, self.height_out, self.width_out)
+        
+        self.register_buffer('xgrid', xgrid, False)
+        self.register_buffer('ygrid', ygrid, False)
 
     def forward(self, inputs):
         x, targets = inputs
@@ -104,25 +107,6 @@ class LowRankNet(nn.Module):
             #)
             results.append(F.relu(r.view(front_dims[0], -1)))
         return torch.stack(results, 2)
-        
-if __name__ == "__main__":
-    # Test out separable net
-    import xception
-    basenet = xception.Xception()
-    X = torch.randn(4, 3, 224, 224, 7)
-    outputs = [1, 3, 5]
 
-    net = LowRankNet(
-        basenet,
-        2,
-        6,
-        128,
-        14,
-        14, 
-        2
-    )
-
-    Y = net.forward((X, outputs))
-    assert Y.shape == (4, 6, 3)
     
         

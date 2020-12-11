@@ -11,37 +11,54 @@ from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 import torch.autograd.profiler as profiler
 
+import os
+
 def save_state(net, title):
     datestr = str(datetime.datetime.now()).replace(':', '-')
     torch.save(net.state_dict(), f'models/{title}-{datestr}.pt')
 
-if __name__ == "__main__":
-    print_frequency = 1
+def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception2d'):
+    print("Main")
+    # Train a network
+    try:
+        os.makedirs(data_root)
+    except FileExistsError:
+        pass
 
+    try:
+        os.makedirs(output_dir)
+    except FileExistsError:
+        pass
+    
     writer = SummaryWriter()
 
-    # Train a network
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device == 'cpu':
+        print("No CUDA! Sad!")
 
-    trainset = pvc1_loader.PVC1(split='train', ntau=6)
-    trainloader = torch.utils.data.DataLoader(
-        trainset, batch_size=1, shuffle=True)
+    print("Download data")
+    pvc1_loader.download(data_root)
 
-    testset = pvc1_loader.PVC1(split='test', ntau=6)
-    testloader = torch.utils.data.DataLoader(
-        trainset, batch_size=1, shuffle=True)
+    print("Loading data")
 
-    testloader_iter = iter(testloader)
+    trainset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), split='train', ntau=6)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=1, shuffle=True)
+
+    testset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), split='test', ntau=6)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=1, shuffle=True)
+
+    print("Init models")
+
     subnet = xception.Xception()
+    subnet.to(device=device)
     net = separable_net.LowRankNet(subnet, 
                                    2, 
                                    trainset.total_electrodes, 
                                    128, 
                                    14, 14, trainset.ntau).to(device)
 
-    # Restart evaluation in this network
-    net.load_state_dict(torch.load('models\\xception.ckpt90000-2020-10-08 09-31-19.917481.pt'))
-    net.eval()
+    net.to(device=device)
+
     criterion = nn.MSELoss()
     optimizer = optim.SGD(net.parameters(), lr=3e-5, momentum=0.9)
 
@@ -51,13 +68,12 @@ if __name__ == "__main__":
             running_loss = 0.0
             for i, data in enumerate(trainloader, 0):
                 # get the inputs; data is a list of [inputs, labels]
-                (inputs, neurons), labels = ((data[0][0].to(device), 
-                                            data[0][1].to(device)),
-                                            data[1].to(device))
+                (X, rg), labels = data
+                X, rg, labels = X.to(device), rg.to(device), labels.to(device)
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
-                outputs = net((inputs, neurons))
+                outputs = net((X, rg))
 
                 loss = criterion(outputs, labels)
                 loss.backward()
@@ -82,18 +98,25 @@ if __name__ == "__main__":
                         test_data = next(testloader_iter)
                     
                     # get the inputs; data is a list of [inputs, labels]
-                    (inputs, neurons), labels = ((test_data[0][0].to(device), 
-                                                test_data[0][1].to(device)),
-                                                test_data[1].to(device))
-                    outputs = net((inputs, neurons))
+                    (X, rg), labels = test_data
+                    X, rg, labels = X.to(device), rg.to(device), labels.to(device)
+
+                    outputs = net((X, rg))
                     loss = criterion(outputs, labels)
-                    writer.add_scalar('Loss/test', loss.item(), n)       
+                    writer.add_scalar('Loss/test', loss.item(), n)
 
                 n += 1
 
                 if n % 10000 == 0:
                     save_state(net, f'xception.ckpt{n}')
+                    
     except KeyboardInterrupt:
         save_state(net, f'xception.ckpt{n}')
 
-        torch.save(net.state_dict(), f'models/xception.{str(datetime.datetime.now())}.pt'.replace(':', '-'))
+        torch.save(net.state_dict(), 
+        f'models/xception.{str(datetime.datetime.now())}.pt'.replace(':', '-'))
+
+if __name__ == "__main__":
+    print("Getting into main")
+    main()
+
