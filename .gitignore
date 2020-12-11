@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+crcns-ringach-data/
+models/
+runs/
+
+.vscode/
