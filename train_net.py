@@ -74,9 +74,10 @@ def main(data_root='/storage/crcns/pvc1/', output_dir='/storage/trained/xception
         if epoch % 5 == 0:
             total_loss = 0
             for i, data in enumerate(testloader, 0):
-                (X, rg), labels = data
-                outputs = net((X.to(device=device), rg.to(device=device)))
-                total_loss += criterion(outputs, labels.to(device=device))
+                with torch.no_grad():
+                    (X, rg), labels = data
+                    outputs = net((X.to(device=device), rg.to(device=device)))
+                    total_loss += criterion(outputs, labels.to(device=device))
 
             print(f"CV loss {total_loss:.2f}")
 
