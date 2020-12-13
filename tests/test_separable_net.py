@@ -15,12 +15,11 @@ class TestSeparableNet(unittest.TestCase):
     def test_forward(self):
         """Smoke test."""
         basenet = xception.Xception()
-        X = torch.randn(1, 3, 224, 224, 7)
-        outputs = torch.tensor([1, 3, 5])
+        X = torch.randn(8, 3, 15, 224, 224)
+        outputs = torch.tensor([[0, 1, 1, 1, 0, 1]], dtype=torch.bool)
 
         net = LowRankNet(
             basenet,
-            2,
             6,
             128,
             14,
@@ -29,7 +28,7 @@ class TestSeparableNet(unittest.TestCase):
         )
 
         Y = net.forward((X, outputs))
-        self.assertEqual(Y.shape, (1, 6, 3))
+        self.assertEqual(Y.shape, (8, 4, 14))
 
 
 if __name__ == '__main__':

@@ -1,3 +1,4 @@
+import gabor_pyramid
 import xception
 import separable_net
 import pvc1_loader
@@ -7,6 +8,7 @@ import itertools
 
 import torch
 from torch import nn
+from torchvision import transforms
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 import torch.autograd.profiler as profiler
@@ -55,58 +57,69 @@ def main(data_root='/storage/crcns/pvc1/',
     print("Loading data")
 
     trainset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), 
-                                split='train', ntau=6)
+                                split='train', 
+                                nt=32, 
+                                ntau=9, 
+                                nframedelay=0)
     trainloader = torch.utils.data.DataLoader(trainset, 
-                                              batch_size=1, 
-                                              shuffle=True)
+                                              batch_size=8, 
+                                              shuffle=True,
+                                              pin_memory=True)
 
     testset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), 
-                               split='test', ntau=6)
+                               split='test', 
+                               nt=32,
+                               ntau=9,
+                               nframedelay=0)
     testloader = torch.utils.data.DataLoader(testset, 
-                                             batch_size=1, 
-                                             shuffle=True)
+                                             batch_size=8, 
+                                             shuffle=True,
+                                             pin_memory=True)
     testloader_iter = iter(testloader)
 
     print("Init models")
 
-    subnet = xception.Xception(start_kernel_size=7, 
-                               nblocks=0, 
-                               nstartfeats=32)
+    subnet = nn.Sequential(
+        gabor_pyramid.GaborPyramid(5),
+        transforms.Normalize(2.2, 2.2)
+    )
     subnet.to(device=device)
 
-    
-
     net = separable_net.LowRankNet(subnet, 
-                                   1, 
                                    trainset.total_electrodes, 
-                                   32, 
-                                   109, 109, trainset.ntau).to(device)
+                                   20, 
+                                   224, 
+                                   224, 
+                                   trainset.ntau).to(device)
 
     net.to(device=device)
 
     layers = get_all_layers(net)
 
-    criterion = nn.MSELoss()
     # optimizer = optim.SGD(net.parameters(), lr=1e-2, momentum=0.9)
     optimizer = optim.Adam(net.parameters(), lr=1e-2)
 
     m, n = 0, 0
-    print_frequency = 25
     test_loss = 0.0
+    print_frequency = 25
+    ckpt_frequency = 25000
     
     try:
         for epoch in range(20):  # loop over the dataset multiple times
             running_loss = 0.0
             for i, data in enumerate(trainloader, 0):
                 # get the inputs; data is a list of [inputs, labels]
-                (X, rg), labels = data
-                X, rg, labels = X.to(device), rg.to(device), labels.to(device)
+                X, M, labels = data
+                X, M, labels = X.to(device), M.to(device), labels.to(device)
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
-                outputs = net((X, rg))
+                outputs = net((X, M))
+                mask = torch.any(M, dim=0)
+                M = M[:, mask]
 
-                loss = criterion(outputs, labels)
+                # masked mean squared error
+                loss = ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
                 loss.backward()
                 optimizer.step()
 
@@ -137,7 +150,7 @@ def main(data_root='/storage/crcns/pvc1/',
                         writer.add_histogram(f'Weights/{name}/hist', 
                                         param.view(-1), n)
 
-                    writer.add_images('Weights/conv1d/img', subnet.conv1.weight, n)
+                    # writer.add_images('Weights/conv1d/img', subnet.conv1.weight, n)
 
                     print('[%d, %5d] average train loss: %.3f' % (epoch + 1, i + 1, running_loss / print_frequency ))
                     running_loss = 0
@@ -150,11 +163,14 @@ def main(data_root='/storage/crcns/pvc1/',
                         test_data = next(testloader_iter)
                     
                     # get the inputs; data is a list of [inputs, labels]
-                    (X, rg), labels = test_data
-                    X, rg, labels = X.to(device), rg.to(device), labels.to(device)
+                    X, M, labels = test_data
+                    X, M, labels = X.to(device), M.to(device), labels.to(device)
 
-                    outputs = net((X, rg))
-                    loss = criterion(outputs, labels)
+                    outputs = net((X, M))
+                    mask = torch.any(M, dim=0)
+                    M = M[:, mask]
+                    loss = ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
+
                     writer.add_scalar('Loss/test', loss.item(), n)
 
                     test_loss += loss.item()
@@ -167,7 +183,7 @@ def main(data_root='/storage/crcns/pvc1/',
 
                 n += 1
 
-                if n % 10000 == 0:
+                if n % ckpt_frequency == 0:
                     save_state(net, f'xception.ckpt{n}', output_dir)
                     
     except KeyboardInterrupt:
@@ -175,5 +191,5 @@ def main(data_root='/storage/crcns/pvc1/',
 
 if __name__ == "__main__":
     print("Getting into main")
-    main('.', 'models/shallow')
+    main('.', 'models/pyramid')
 

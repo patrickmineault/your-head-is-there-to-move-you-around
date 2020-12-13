@@ -29,6 +29,7 @@ class PVC1(torch.utils.data.Dataset):
         nt:          the number of images per micro-batch
         ntau:        the number of time lags that the y response listens to
         nframedelay: the number of frames the neural response is delayed by compared to the neural data.
+        nframestart: the number of frames after the onset of a sequence to start at. 15 by default ~ 500ms
         split: either train or test (if test, returns a 1 / 7 test set, if train, it's the opposite)
     """
     def __init__(self, 
@@ -38,17 +39,22 @@ class PVC1(torch.utils.data.Dataset):
                  nt=20,
                  ntau=1,
                  nframedelay=2,
+                 nframestart=15,
                  split='train',
                  ):
 
         if split not in ('train', 'test'):
             raise NotImplementedError('Split is set to an unknown value')
 
+        if ntau + nframedelay > nframestart:
+            raise NotImplementedError('ntau + nframedelay > nframestart, sequence starts before frame 0')
+
         self.nx = nx
         self.ny = ny
         self.nt = nt
         self.ntau = ntau
         self.nframedelay = nframedelay
+        self.nframestart = nframestart
 
         self.movie_info = _movie_info(root)
 
@@ -94,19 +100,32 @@ class PVC1(torch.utils.data.Dataset):
                 which_movie = condition['values']
                 cond = self.movie_info[tuple(which_movie)]
                 nframes = cond['nframes']
-                nskip = nt - ntau + 1
-                ntrainings = int((nframes - nt) / nskip) + 1
+                nskip = nt
+                ntrainings = int(np.ceil((nframes - nt) / nskip) + 1)
 
-                sequence += [{
-                    'key': key,
-                    'movie_path': os.path.join(root, 'movie_frames', f"movie{which_movie[0]:03}_{which_movie[1]:03}.images"),
-                    'movie': which_movie[0],
-                    'segment': which_movie[1],
-                    'result': j,
-                    'start_frame': nskip * i,
-                    'end_frame': nskip * i + nt,
-                    'electrode_range': np.arange(cumulative_electrodes, cumulative_electrodes + n_electrodes)
-                } for i in range(ntrainings)]
+                for start_time in range(self.nframestart, nframes, nskip):
+                    if start_time + nskip + 1 > nframes:
+                        # Incomplete frame.
+                        continue
+
+                    end_time = min((nframes, start_time + nskip + 1))
+                    spike_frames = np.arange(start_time, 
+                                             end_time)
+                    bins = spike_frames / 30.0
+                    sequence.append({
+                        'key': key,
+                        'movie_path': os.path.join(root, 
+                                                   'movie_frames', 
+                                                   f"movie{which_movie[0]:03}_{which_movie[1]:03}.images"),
+                        'movie': which_movie[0],
+                        'segment': which_movie[1],
+                        'result': j,
+                        'start_frame': start_time - self.nframedelay - self.ntau + 2,
+                        'end_frame': end_time - self.nframedelay,
+                        'electrode_range': np.arange(cumulative_electrodes, cumulative_electrodes + n_electrodes),
+                        'bins': bins,
+                        'spike_frames': spike_frames,
+                        'nframes': nframes})
 
             cumulative_electrodes += n_electrodes
 
@@ -116,9 +135,15 @@ class PVC1(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         # Load a single segment of length idx from disk.
         tgt = self.sequence[idx]
+        bins = tgt['bins']
 
         imgs = []
+        # The images are natively 320 x 240.
         for frame in range(tgt['start_frame'], tgt['end_frame']):
+            if frame < 0 or frame >= tgt['nframes']:
+                imgs.append(128 * np.ones((3, self.ny, self.nx)))
+                continue
+
             im_name = f'movie{tgt["movie"]:03}_{tgt["segment"]:03}_{frame:03}.jpeg'
             the_im = matplotlib.image.imread(os.path.join(tgt['movie_path'], im_name))
             the_im = the_im.transpose((2, 0, 1))
@@ -131,13 +156,14 @@ class PVC1(torch.utils.data.Dataset):
 
             imgs.append(the_im[:, rgy, rgx])
 
-        # Center and normalize the zeros.
-        X = (np.stack(imgs, axis=-1).astype(np.float32) - 128.0) / 128.0
+        # Center and normalize.
+        # This seems like a random order, but it's to fit with the ordering
+        # the standard ordering of conv3d. 
+        # https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html
+        X = (np.stack(imgs, axis=1).astype(np.float32) - 128.0) / 128.0
         mat_file = self.mat_files[tgt['key']]
         
         y = []
-        bins = np.arange(tgt['start_frame'] + self.nframedelay + self.ntau, 
-                         tgt['start_frame'] + self.nframedelay + self.nt + 2) / 30.0
         batch = mat_file['pepANA']['listOfResults'][tgt['result']]
 
         if batch['noRepeats'] > 1:
@@ -158,12 +184,14 @@ class PVC1(torch.utils.data.Dataset):
 
         y = np.array(y).T.astype(np.float32)
 
-        assert X.shape[-1] == self.nt
-        assert y.shape[0] == self.nt - self.ntau + 1
-        assert X.shape[0] == 3
-        assert X.shape[1] == self.ny
-        assert X.shape[2] == self.nx
-        return ((X, tgt['electrode_range']), y)
+        # Create a mask from the electrode range
+        m = np.zeros((self.total_electrodes), dtype=np.bool)
+        m[tgt['electrode_range']] = True
+
+        Y = np.zeros((self.total_electrodes, y.shape[0]))
+        Y[tgt['electrode_range'], :] = y.T
+
+        return (X, m, Y)
 
     def __len__(self):
         # Returns the length of a dataset

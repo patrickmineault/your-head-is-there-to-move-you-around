@@ -16,10 +16,11 @@ class LowRankNet(nn.Module):
     to multi-target networks which are separable combinations along channel, 
     time, and space dimensions.
 
+    Right now, only rank = 1 is implemented.
+
     Arguments:
         subnet: a nn.Module whose forward op takes batches of channel_in X height_in X width_in images
         and maps them to channels_out X height_out X width_out images.
-        rank: the rank of the transformation
         ntargets: the number of targets total
         channels_out: the number of channels coming out of subnet
         height_out: the number of vertical pixels coming out of subnet
@@ -27,7 +28,6 @@ class LowRankNet(nn.Module):
         nt: the number of weights in the convolution over time
     """
     def __init__(self, subnet: nn.Module, 
-                       rank: int, 
                        ntargets: int, 
                        channels_out: int, 
                        height_out: int, 
@@ -35,7 +35,6 @@ class LowRankNet(nn.Module):
                        nt: int):
         super(LowRankNet, self).__init__()
         self.subnet = subnet
-        self.rank = rank
         self.ntargets = ntargets
         self.channels_out = channels_out
         self.width_out  = width_out
@@ -45,19 +44,23 @@ class LowRankNet(nn.Module):
         self.init_params()
 
     def init_params(self):
-        self.wc = nn.Parameter(torch.randn(self.channels_out, self.rank, self.ntargets))
-        self.wx = nn.Parameter(torch.rand(self.rank, self.ntargets) * self.width_out)
-        self.wy = nn.Parameter(torch.rand(self.rank, self.ntargets) * self.height_out)
-        self.wsigmax = nn.Parameter(torch.randn(self.rank, self.ntargets))
-        self.wsigmay = nn.Parameter(torch.randn(self.rank, self.ntargets))
-        self.wt = nn.Parameter(torch.randn(self.nt, self.ntargets) / self.nt)
-        self.wb = nn.Parameter(torch.randn(self.ntargets))
-        self.wbeta = nn.Parameter(1 + torch.rand(self.ntargets))
+        self.wc = nn.Parameter(
+            (.1 * torch.randn(self.channels_out, self.ntargets)/10 + 1) / self.channels_out
+        )
+
+        self.wx = nn.Parameter(.3 + .4 * torch.rand(self.ntargets))
+        self.wy = nn.Parameter(.3 + .4 * torch.rand(self.ntargets))
+        self.wsigmax = nn.Parameter(.4 + .1 * torch.rand(self.ntargets))
+        self.wsigmay = nn.Parameter(.4 + .1 * torch.rand(self.ntargets))
+        self.wt = nn.Parameter((1 + .1 * torch.randn(self.nt, self.ntargets)) / self.nt)
+        self.wb = nn.Parameter(torch.randn(self.ntargets)*.05 + .6)
+
+        # self.wbeta = nn.Parameter(1 + torch.rand(self.ntargets))
 
         # Create the grid to evaluate the parameters on.
         xgrid, ygrid = torch.meshgrid(
-            torch.arange(0, self.width_out),
-            torch.arange(0, self.height_out),
+            torch.arange(0, self.width_out) / self.width_out,
+            torch.arange(0, self.height_out) / self.height_out,
         )
         assert xgrid.shape[0] == self.height_out
         assert xgrid.shape[1] == self.width_out
@@ -69,44 +72,45 @@ class LowRankNet(nn.Module):
 
     def forward(self, inputs):
         x, targets = inputs
-        targets = targets.squeeze()
-
-        if x.shape[0] != 1:
-            raise NotImplementedError("Cannot deal with more than 1 batch at a time")
+        mask = torch.any(targets, dim=0)
+        ntargets = mask.sum().item()
 
         assert x.ndim == 5
 
-        # Start by mapping X through the sub-networks.
+        # Start by mapping X through the sub-network.
         # The subnet doesn't know anything about time, so move time to the front dimension of batches
-        front_dims = (x.shape[0], x.shape[4])
-        x = x.permute(0, 4, 1, 2, 3).reshape(-1, x.shape[1], x.shape[2], x.shape[3])
+        # batch_dim x channels x time x Y x X
+        front_dims = (x.shape[0], x.shape[2])
+        x = x.permute(0, 2, 1, 3, 4).reshape(-1, x.shape[1], x.shape[3], x.shape[4])
+
         x = self.subnet.forward(x)
 
-        # x has shape (batch size x nt) X channels_out X height_out X width_out
-        results = []
-        for target in targets:
-            r = torch.tensordot(x, self.wc[:, :, target], dims=([1], [0]))
-            # r has shape (batch size x nt) X height_out X width_out X rank
 
-            ws = torch.exp(-(self.xgrid - self.wx[:, target].view(-1, 1, 1)) ** 2 / 2 / (0.5 + self.wsigmax[:, target].view(-1, 1, 1) ** 2) - 
-                            (self.ygrid - self.wy[:, target].view(-1, 1, 1)) ** 2 / 2 / (0.5 + self.wsigmay[:, target].view(-1, 1, 1) ** 2))
+        # Now we're at (batch_dim x nt) x channels x Y x X
+        dx = (((self.xgrid.reshape(-1, 1) - self.wx[mask].view(1, -1)) ** 2 / 2 ) / 
+               (0.01 + self.wsigmax[mask].view(1, -1) ** 2))
+        dy = (((self.ygrid.reshape(-1, 1) - self.wy[mask].view(1, -1)) ** 2 / 2 ) / 
+               (0.01 + self.wsigmay[mask].view(1, -1) ** 2))
 
-            ws = ws / (.1 + ws.sum())
-            
-            # ws has shape rank x height_out X width_out
-            r = torch.tensordot(r, ws, ([1, 2, 3], [1, 2, 0]))
+        ws = torch.exp(- dx - dy)
+        ws = ws / (.1 + ws.sum(axis=0, keepdims=True))
 
-            # r has shape (batch_size X nt)
-            r = F.conv1d(r.view(front_dims[0], 1, front_dims[1]), 
-                         self.wt[:, target].view(1, 1, -1), 
-                         self.wb[target].view(1))
+        R = torch.tensordot(x.view(x.shape[0], x.shape[1], -1), ws, dims=([2], [0]))
 
-            #results.append(
-            #    mysoftplus(r.view(front_dims[0], -1), 
-            #               beta=F.softplus(self.wbeta[target]))
-            #)
-            results.append(F.relu(r.view(front_dims[0], -1)))
-        return torch.stack(results, 2)
+        # (batch_dim x nt) x channels x outputs
+        R = (R * self.wc[:, mask].view(-1, self.wc.shape[0], ntargets)).sum(axis=1)
+
+        # (batch_dim x nt) x outputs
+        R = R.reshape(front_dims[0], front_dims[1], -1).permute(0, 2, 1)
+
+        # Now we're at batch_dim x outputs x nt
+        R = F.conv1d(R, 
+                     self.wt[:, mask].T.view(ntargets, 1, self.wt.shape[0]), 
+                     bias=self.wb[mask], 
+                     groups=ntargets)
+
+        # Finally, we're at batch_dim x outputs x nt
+        return R
 
     
         

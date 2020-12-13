@@ -77,45 +77,64 @@ class Xception(nn.Module):
 
     Code adapted from https://github.com/tstandley/Xception-PyTorch/blob/master/xception.py
     """
-    def __init__(self):
+    def __init__(self, 
+                start_kernel_size=3, 
+                nblocks=5,
+                nstartfeats=16):
         super(Xception, self).__init__()
         self.conv1 = nn.Conv2d(3, 
-                               16,
-                               3,
+                               nstartfeats,
+                               start_kernel_size,
                                2,
                                0,
                                bias=False
                                )
-        self.bn1 = nn.BatchNorm2d(16)
+        self.bn1 = nn.BatchNorm2d(nstartfeats)
         self.relu = nn.ReLU(inplace=True)
+        self.nblocks = nblocks
 
-        # 112
-        self.block1 = Block(16, 32, 2, 2, start_with_relu=False)
-        # 56
-        self.block2 = Block(32, 64, 2, 2, start_with_relu=True)
-        # 28
-        self.block3 = Block(64, 128, 2, 2, start_with_relu=True)
+        if self.nblocks >= 1:
+            # 112
+            self.block1 = Block(nstartfeats, 
+                                nstartfeats*2, 2, 2, start_with_relu=False)
+
+        if self.nblocks >= 2:
+            # 56
+            self.block2 = Block(nstartfeats*2, 
+                                nstartfeats*4, 2, 2, start_with_relu=True)
+        
+        if self.nblocks >= 3:
+            # 28
+            self.block3 = Block(nstartfeats*4, 
+                                nstartfeats*8, 2, 2, start_with_relu=True)
 
         # Middle 
         # 14
-        self.block4 = Block(128, 128, 1, 1, start_with_relu=False)
-        self.block5 = Block(128, 128, 1, 1, start_with_relu=False)
+        if self.nblocks >= 4:
+            self.block4 = Block(nstartfeats*8, 
+                                nstartfeats*8, 1, 1, start_with_relu=False)
+        if self.nblocks >= 5:
+            self.block5 = Block(nstartfeats*8, 
+                                nstartfeats*8, 1, 1, start_with_relu=False)
         
 
     def forward(self, x):
-
         # Head of xception
         # 224 x 224
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
 
-        x = self.block1(x)
-        x = self.block2(x)
-        x = self.block3(x)
-        
-        x = self.block4(x)
-        x = self.block5(x)
+        if self.nblocks >= 1:
+            x = self.block1(x)
+        if self.nblocks >= 2:
+            x = self.block2(x)
+        if self.nblocks >= 3:
+            x = self.block3(x)
+        if self.nblocks >= 4:
+            x = self.block4(x)
+        if self.nblocks >= 5:
+            x = self.block5(x)
 
         # Endpoint
         return x
