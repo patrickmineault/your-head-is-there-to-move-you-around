@@ -133,3 +133,4 @@ models/
 runs/
 
 .vscode/
+wandb

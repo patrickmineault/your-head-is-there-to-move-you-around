@@ -87,7 +87,6 @@ class PVC1(torch.utils.data.Dataset):
                 n_electrodes = len(batch['repeat']['data'])
 
             # Load all the conditions.
-            
             for j, condition in enumerate(mat_file['pepANA']['listOfResults']):
                 if condition['symbols'][0] != 'movie_id':
                     print(f'non-movie dataset, skipping {key}, {j}')
@@ -95,7 +94,9 @@ class PVC1(torch.utils.data.Dataset):
 
                 set_num += 1
 
-                if set_num % 10 not in splits[split]:
+                # Make sure that at most 10 consecutive seconds are in each 
+                # split to prevent leakage.
+                if int(set_num / 10) % 10 not in splits[split]:
                     continue
 
                 which_movie = condition['values']
