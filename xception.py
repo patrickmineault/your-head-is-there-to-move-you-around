@@ -89,7 +89,7 @@ class Xception(nn.Module):
                                0,
                                bias=False
                                )
-        self.bn1 = nn.BatchNorm2d(nstartfeats)
+        # self.bn1 = nn.BatchNorm2d(nstartfeats)
         self.relu = nn.ReLU(inplace=True)
         self.nblocks = nblocks
 
@@ -122,7 +122,7 @@ class Xception(nn.Module):
         # Head of xception
         # 224 x 224
         x = self.conv1(x)
-        x = self.bn1(x)
+        # x = self.bn1(x)
         x = self.relu(x)
 
         if self.nblocks >= 1:

@@ -61,6 +61,7 @@ def main(data_root='/storage/crcns/pvc1/',
                                 nt=32, 
                                 ntau=9, 
                                 nframedelay=0)
+
     trainloader = torch.utils.data.DataLoader(trainset, 
                                               batch_size=8, 
                                               shuffle=True,
@@ -88,21 +89,23 @@ def main(data_root='/storage/crcns/pvc1/',
     net = separable_net.LowRankNet(subnet, 
                                    trainset.total_electrodes, 
                                    20, 
-                                   224, 
-                                   224, 
+                                   223, 
+                                   223, 
                                    trainset.ntau).to(device)
+
+    rc = torchvision.transforms.RandomCrop(223)
 
     net.to(device=device)
 
     layers = get_all_layers(net)
 
     # optimizer = optim.SGD(net.parameters(), lr=1e-2, momentum=0.9)
-    optimizer = optim.Adam(net.parameters(), lr=1e-2)
+    optimizer = optim.Adam(net.parameters(), lr=1e-1)
 
     m, n = 0, 0
     test_loss = 0.0
     print_frequency = 25
-    ckpt_frequency = 25000
+    ckpt_frequency = 2000
     
     try:
         for epoch in range(20):  # loop over the dataset multiple times
@@ -114,7 +117,7 @@ def main(data_root='/storage/crcns/pvc1/',
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
-                outputs = net((X, M))
+                outputs = net((rc(X), M))
                 mask = torch.any(M, dim=0)
                 M = M[:, mask]
 

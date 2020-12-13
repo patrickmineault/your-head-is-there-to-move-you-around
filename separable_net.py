@@ -55,13 +55,14 @@ class LowRankNet(nn.Module):
         self.wt = nn.Parameter((1 + .1 * torch.randn(self.nt, self.ntargets)) / self.nt)
         self.wb = nn.Parameter(torch.randn(self.ntargets)*.05 + .6)
 
-        # self.wbeta = nn.Parameter(1 + torch.rand(self.ntargets))
-
         # Create the grid to evaluate the parameters on.
-        xgrid, ygrid = torch.meshgrid(
-            torch.arange(0, self.width_out) / self.width_out,
+        ygrid, xgrid = torch.meshgrid(
             torch.arange(0, self.height_out) / self.height_out,
+            torch.arange(0, self.width_out) / self.width_out,
         )
+        
+        assert ygrid[1, 0] - ygrid[0, 0] > 0
+        assert xgrid[1, 0] - xgrid[0, 0] == 0
         assert xgrid.shape[0] == self.height_out
         assert xgrid.shape[1] == self.width_out
         xgrid = xgrid.view(1, self.height_out, self.width_out)

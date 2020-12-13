@@ -153,8 +153,10 @@ class PVC1(torch.utils.data.Dataset):
 
             cropy = (the_im.shape[1] - self.ny) // 2
             cropx = (the_im.shape[2] - self.nx) // 2
-            rgy = slice(cropy, the_im.shape[1] - cropy)
-            rgx = slice(cropx, the_im.shape[2] - cropx)
+            rgy = slice(the_im.shape[1] - self.ny, the_im.shape[1])
+            
+            # All the receptive fields are on the right hand side
+            rgx = slice(cropx * 2, the_im.shape[2])
 
             imgs.append(the_im[:, rgy, rgx])
 

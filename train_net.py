@@ -10,6 +10,7 @@ from torch import nn
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 import torch.autograd.profiler as profiler
+from torchvision import transforms
 
 import os
 
@@ -76,7 +77,7 @@ def main(data_root='/storage/crcns/pvc1/',
                                              pin_memory=True)
     testloader_iter = iter(testloader)
 
-    print("Init models")
+    print("Init models")    
 
     subnet = xception.Xception(start_kernel_size=7, 
                                nblocks=0, 
@@ -90,6 +91,8 @@ def main(data_root='/storage/crcns/pvc1/',
                                    109, 
                                    trainset.ntau).to(device)
 
+    rc = transforms.RandomCrop(223)
+
     net.to(device=device)
 
     layers = get_all_layers(net)
@@ -101,6 +104,7 @@ def main(data_root='/storage/crcns/pvc1/',
     m, n = 0, 0
     print_frequency = 25
     test_loss = 0.0
+    ckpt_frequency = 2500
     
     try:
         for epoch in range(20):  # loop over the dataset multiple times
@@ -111,6 +115,8 @@ def main(data_root='/storage/crcns/pvc1/',
                 X, M, labels = X.to(device), M.to(device), labels.to(device)
 
                 # zero the parameter gradients
+                X = rc(X)
+
                 optimizer.zero_grad()
                 outputs = net((X, M))
                 mask = torch.any(M, dim=0)
@@ -181,7 +187,7 @@ def main(data_root='/storage/crcns/pvc1/',
 
                 n += 1
 
-                if n % 10000 == 0:
+                if n % ckpt_frequency == 0:
                     save_state(net, f'xception.ckpt{n}', output_dir)
                     
     except KeyboardInterrupt:
