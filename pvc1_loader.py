@@ -30,7 +30,7 @@ class PVC1(torch.utils.data.Dataset):
         ntau:        the number of time lags that the y response listens to
         nframedelay: the number of frames the neural response is delayed by compared to the neural data.
         nframestart: the number of frames after the onset of a sequence to start at. 15 by default ~ 500ms
-        split: either train or test (if test, returns a 1 / 7 test set, if train, it's the opposite)
+        split: either train, tune or test (if tune or test, returns a 1 / 10 tune/test set, if train, it's the opposite)
     """
     def __init__(self, 
                  root='./crcns-ringach-data',
@@ -43,7 +43,7 @@ class PVC1(torch.utils.data.Dataset):
                  split='train',
                  ):
 
-        if split not in ('train', 'test'):
+        if split not in ('train', 'tune', 'test'):
             raise NotImplementedError('Split is set to an unknown value')
 
         if ntau + nframedelay > nframestart:
@@ -70,6 +70,10 @@ class PVC1(torch.utils.data.Dataset):
         self.mat_files = {}
         set_num = 0
 
+        splits = {'train': [0, 1, 2, 3, 5, 6, 7, 8],
+                  'test': [9],
+                  'tune': [4]}
+
         cumulative_electrodes = 0
         for path in paths:
             mat_file = mat_utils.load_mat_as_dict(path)
@@ -83,6 +87,7 @@ class PVC1(torch.utils.data.Dataset):
                 n_electrodes = len(batch['repeat']['data'])
 
             # Load all the conditions.
+            
             for j, condition in enumerate(mat_file['pepANA']['listOfResults']):
                 if condition['symbols'][0] != 'movie_id':
                     print(f'non-movie dataset, skipping {key}, {j}')
@@ -90,12 +95,8 @@ class PVC1(torch.utils.data.Dataset):
 
                 set_num += 1
 
-                if split == 'train':
-                    if set_num % 7 == 0:
-                        continue
-                else:
-                    if set_num % 7 != 0:
-                        continue
+                if set_num % 10 not in splits[split]:
+                    continue
 
                 which_movie = condition['values']
                 cond = self.movie_info[tuple(which_movie)]

@@ -55,16 +55,25 @@ def main(data_root='/storage/crcns/pvc1/',
     print("Loading data")
 
     trainset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), 
-                                split='train', ntau=6)
+                                split='train', 
+                                nt=32, 
+                                ntau=9, 
+                                nframedelay=0)
+                                
     trainloader = torch.utils.data.DataLoader(trainset, 
-                                              batch_size=1, 
-                                              shuffle=True)
+                                              batch_size=8, 
+                                              shuffle=True,
+                                              pin_memory=True)
 
     testset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), 
-                               split='test', ntau=6)
+                               split='tune', 
+                               nt=32,
+                               ntau=9,
+                               nframedelay=0)
     testloader = torch.utils.data.DataLoader(testset, 
-                                             batch_size=1, 
-                                             shuffle=True)
+                                             batch_size=8, 
+                                             shuffle=True,
+                                             pin_memory=True)
     testloader_iter = iter(testloader)
 
     print("Init models")
@@ -74,13 +83,12 @@ def main(data_root='/storage/crcns/pvc1/',
                                nstartfeats=32)
     subnet.to(device=device)
 
-    
-
     net = separable_net.LowRankNet(subnet, 
-                                   1, 
                                    trainset.total_electrodes, 
                                    32, 
-                                   109, 109, trainset.ntau).to(device)
+                                   109, 
+                                   109, 
+                                   trainset.ntau).to(device)
 
     net.to(device=device)
 
@@ -99,14 +107,17 @@ def main(data_root='/storage/crcns/pvc1/',
             running_loss = 0.0
             for i, data in enumerate(trainloader, 0):
                 # get the inputs; data is a list of [inputs, labels]
-                (X, rg), labels = data
-                X, rg, labels = X.to(device), rg.to(device), labels.to(device)
+                X, M, labels = data
+                X, M, labels = X.to(device), M.to(device), labels.to(device)
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
-                outputs = net((X, rg))
+                outputs = net((X, M))
+                mask = torch.any(M, dim=0)
+                M = M[:, mask]
 
-                loss = criterion(outputs, labels)
+                # masked mean squared error
+                loss = ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
                 loss.backward()
                 optimizer.step()
 
@@ -150,11 +161,14 @@ def main(data_root='/storage/crcns/pvc1/',
                         test_data = next(testloader_iter)
                     
                     # get the inputs; data is a list of [inputs, labels]
-                    (X, rg), labels = test_data
-                    X, rg, labels = X.to(device), rg.to(device), labels.to(device)
+                    X, M, labels = test_data
+                    X, M, labels = X.to(device), M.to(device), labels.to(device)
 
-                    outputs = net((X, rg))
-                    loss = criterion(outputs, labels)
+                    outputs = net((X, M))
+                    mask = torch.any(M, dim=0)
+                    M = M[:, mask]
+                    loss = ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
+
                     writer.add_scalar('Loss/test', loss.item(), n)
 
                     test_loss += loss.item()
