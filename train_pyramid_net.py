@@ -5,6 +5,10 @@ import pvc1_loader
 
 import datetime
 import itertools
+import os
+
+import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
 
 import torch
 from torch import nn
@@ -13,7 +17,6 @@ from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 import torch.autograd.profiler as profiler
 
-import os
 
 def get_all_layers(net, prefix=[]):
     if hasattr(net, '_modules'):
@@ -68,7 +71,7 @@ def main(data_root='/storage/crcns/pvc1/',
                                               pin_memory=True)
 
     testset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), 
-                               split='test', 
+                               split='tune', 
                                nt=32,
                                ntau=9,
                                nframedelay=0)
@@ -93,14 +96,14 @@ def main(data_root='/storage/crcns/pvc1/',
                                    223, 
                                    trainset.ntau).to(device)
 
-    rc = torchvision.transforms.RandomCrop(223)
+    rc = transforms.RandomCrop(223)
 
     net.to(device=device)
 
     layers = get_all_layers(net)
 
     # optimizer = optim.SGD(net.parameters(), lr=1e-2, momentum=0.9)
-    optimizer = optim.Adam(net.parameters(), lr=1e-1)
+    optimizer = optim.Adam(net.parameters(), lr=1e-2)
 
     m, n = 0, 0
     test_loss = 0.0
@@ -115,9 +118,11 @@ def main(data_root='/storage/crcns/pvc1/',
                 X, M, labels = data
                 X, M, labels = X.to(device), M.to(device), labels.to(device)
 
+                X = rc(X)
+
                 # zero the parameter gradients
                 optimizer.zero_grad()
-                outputs = net((rc(X), M))
+                outputs = net((X, M))
                 mask = torch.any(M, dim=0)
                 M = M[:, mask]
 
@@ -158,7 +163,23 @@ def main(data_root='/storage/crcns/pvc1/',
                     print('[%d, %5d] average train loss: %.3f' % (epoch + 1, i + 1, running_loss / print_frequency ))
                     running_loss = 0
 
-                if i % 7 == 0:
+                    # Plot the positions of the receptive fields
+                    fig = plt.figure(figsize=(6, 6))
+                    ax = plt.gca()
+                    for i in range(trainset.total_electrodes):
+                        ellipse = Ellipse((net.wx[i].item(), net.wy[i].item()), 
+                                        width=2.35*(.1 + abs(net.wsigmax[i].item())),
+                                        height=2.35*(.1 + abs(net.wsigmay[i].item())),
+                                        facecolor='none',
+                                        edgecolor=[0, 0, 0, .5]
+                                        )
+                        ax.add_patch(ellipse)
+                    ax.set_xlim((-.1, 1.1))
+                    ax.set_ylim((1.1, -0.1))
+
+                    writer.add_figure('RF', fig, n)
+
+                if i % 10 == 0:
                     try:
                         test_data = next(testloader_iter)
                     except StopIteration:
@@ -168,6 +189,8 @@ def main(data_root='/storage/crcns/pvc1/',
                     # get the inputs; data is a list of [inputs, labels]
                     X, M, labels = test_data
                     X, M, labels = X.to(device), M.to(device), labels.to(device)
+
+                    X = X[:, :, :, :-1, :-1]
 
                     outputs = net((X, M))
                     mask = torch.any(M, dim=0)

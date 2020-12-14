@@ -30,7 +30,7 @@ class PVC1(torch.utils.data.Dataset):
         ntau:        the number of time lags that the y response listens to
         nframedelay: the number of frames the neural response is delayed by compared to the neural data.
         nframestart: the number of frames after the onset of a sequence to start at. 15 by default ~ 500ms
-        split: either train, tune or test (if tune or test, returns a 1 / 10 tune/test set, if train, it's the opposite)
+        split: either train, tune or report (if tune or report, returns a 1 / 10 tune/report set, if train, 8/10)
     """
     def __init__(self, 
                  root='./crcns-ringach-data',
@@ -43,7 +43,7 @@ class PVC1(torch.utils.data.Dataset):
                  split='train',
                  ):
 
-        if split not in ('train', 'tune', 'test'):
+        if split not in ('train', 'tune', 'report'):
             raise NotImplementedError('Split is set to an unknown value')
 
         if ntau + nframedelay > nframestart:
@@ -71,10 +71,12 @@ class PVC1(torch.utils.data.Dataset):
         set_num = 0
 
         splits = {'train': [0, 1, 2, 3, 5, 6, 7, 8],
-                  'test': [9],
-                  'tune': [4]}
+                  'tune': [4],
+                  'report': [9],
+                  }
 
         cumulative_electrodes = 0
+        nrepeats = []
         for path in paths:
             mat_file = mat_utils.load_mat_as_dict(path)
             key = path
@@ -87,16 +89,22 @@ class PVC1(torch.utils.data.Dataset):
                 n_electrodes = len(batch['repeat']['data'])
 
             # Load all the conditions.
+            n_electrodes_seen = 0
             for j, condition in enumerate(mat_file['pepANA']['listOfResults']):
                 if condition['symbols'][0] != 'movie_id':
-                    print(f'non-movie dataset, skipping {key}, {j}')
+                    # This is not movie data, skip.
+                    #print(f'non-movie dataset, skipping {key}, {j}')
                     continue
+
+                if n_electrodes_seen == 0:
+                    nrepeats += [batch['noRepeats']] * n_electrodes
+
+                n_electrodes_seen = n_electrodes
 
                 set_num += 1
 
-                # Make sure that at most 10 consecutive seconds are in each 
-                # split to prevent leakage.
-                if int(set_num / 10) % 10 not in splits[split]:
+                # The train, tune and report splits
+                if set_num % 10 not in splits[split]:
                     continue
 
                 which_movie = condition['values']
@@ -129,8 +137,9 @@ class PVC1(torch.utils.data.Dataset):
                         'spike_frames': spike_frames,
                         'nframes': nframes})
 
-            cumulative_electrodes += n_electrodes
+            cumulative_electrodes += n_electrodes_seen
 
+        self.nrepeats = np.array(nrepeats)
         self.sequence = sequence
         self.total_electrodes = cumulative_electrodes
 
@@ -153,10 +162,12 @@ class PVC1(torch.utils.data.Dataset):
 
             cropy = (the_im.shape[1] - self.ny) // 2
             cropx = (the_im.shape[2] - self.nx) // 2
+
+            # All the RFs are at the bottom.
             rgy = slice(the_im.shape[1] - self.ny, the_im.shape[1])
             
-            # All the receptive fields are on the right hand side
-            rgx = slice(cropx * 2, the_im.shape[2])
+            # And in the center.
+            rgx = slice(cropx, cropx + self.nx)
 
             imgs.append(the_im[:, rgy, rgx])
 
