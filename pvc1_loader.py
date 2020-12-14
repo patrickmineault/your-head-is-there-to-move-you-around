@@ -176,7 +176,7 @@ class PVC1(torch.utils.data.Dataset):
         # the standard ordering of conv3d. 
         # https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html
         X = (np.stack(imgs, axis=1).astype(np.float32) - 
-             np.array([83, 81, 73], dtype=np.float32).reshape((3, 1, 1))) / 64.0
+             np.array([83, 81, 73], dtype=np.float32).reshape((3, 1, 1, 1))) / 64.0
         mat_file = self.mat_files[tgt['key']]
         
         y = []

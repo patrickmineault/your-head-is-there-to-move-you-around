@@ -7,6 +7,7 @@ import time
 import unittest
 
 class TestTrain(unittest.TestCase):
+    @unittest.skip("Runs only on Unix")
     def test_train(self):
         """Smoke test."""
         train_net.main('/tmp/data', '/tmp/models')

@@ -30,8 +30,8 @@ def get_all_layers(net, prefix=[]):
 
 
 def save_state(net, title, output_dir):
-    datestr = str(datetime.datetime.now()).replace(':', '-')
-    torch.save(net.state_dict(), os.path.join(output_dir, f'{title}-{datestr}.pt'))
+    datuner = str(datetime.datetime.now()).replace(':', '-')
+    torch.save(net.state_dict(), os.path.join(output_dir, f'{title}-{datuner}.pt'))
 
 def main(data_root='/storage/crcns/pvc1/', 
          output_dir='/storage/trained/xception2d'):
@@ -70,16 +70,16 @@ def main(data_root='/storage/crcns/pvc1/',
                                               shuffle=True,
                                               pin_memory=True)
 
-    testset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), 
+    tuneset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), 
                                split='tune', 
                                nt=32,
                                ntau=9,
                                nframedelay=0)
-    testloader = torch.utils.data.DataLoader(testset, 
+    tuneloader = torch.utils.data.DataLoader(tuneset, 
                                              batch_size=8, 
                                              shuffle=True,
                                              pin_memory=True)
-    testloader_iter = iter(testloader)
+    tuneloader_iter = iter(tuneloader)
 
     print("Init models")
 
@@ -106,7 +106,7 @@ def main(data_root='/storage/crcns/pvc1/',
     optimizer = optim.Adam(net.parameters(), lr=1e-2)
 
     m, n = 0, 0
-    test_loss = 0.0
+    tune_loss = 0.0
     print_frequency = 25
     ckpt_frequency = 2000
     
@@ -174,6 +174,7 @@ def main(data_root='/storage/crcns/pvc1/',
                                         edgecolor=[0, 0, 0, .5]
                                         )
                         ax.add_patch(ellipse)
+                    ax.plot(net.wx.cpu().detach().numpy(), net.wy.cpu().detach().numpy(), 'r.')
                     ax.set_xlim((-.1, 1.1))
                     ax.set_ylim((1.1, -0.1))
 
@@ -181,13 +182,13 @@ def main(data_root='/storage/crcns/pvc1/',
 
                 if i % 10 == 0:
                     try:
-                        test_data = next(testloader_iter)
+                        tune_data = next(tuneloader_iter)
                     except StopIteration:
-                        testloader_iter = iter(testloader)
-                        test_data = next(testloader_iter)
+                        tuneloader_iter = iter(tuneloader)
+                        tune_data = next(tuneloader_iter)
                     
                     # get the inputs; data is a list of [inputs, labels]
-                    X, M, labels = test_data
+                    X, M, labels = tune_data
                     X, M, labels = X.to(device), M.to(device), labels.to(device)
 
                     X = X[:, :, :, :-1, :-1]
@@ -197,14 +198,14 @@ def main(data_root='/storage/crcns/pvc1/',
                     M = M[:, mask]
                     loss = ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
 
-                    writer.add_scalar('Loss/test', loss.item(), n)
+                    writer.add_scalar('Loss/tune', loss.item(), n)
 
-                    test_loss += loss.item()
+                    tune_loss += loss.item()
                     m += 1
 
                     if m == print_frequency:
-                        print(f"Test accuracy: {test_loss /  print_frequency:.3f}")
-                        test_loss = 0
+                        print(f"tune accuracy: {tune_loss /  print_frequency:.3f}")
+                        tune_loss = 0
                         m = 0
 
                 n += 1

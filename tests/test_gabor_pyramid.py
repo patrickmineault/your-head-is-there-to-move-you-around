@@ -11,7 +11,6 @@ class TestGaborPyramid(unittest.TestCase):
         inputs = torch.ones(4, 3, 127, 127)
         outputs = net.forward(inputs)
 
-        print(outputs.shape)
         self.assertEqual(outputs.shape[1], 12)
 
         net = gabor_pyramid.GaborPyramid(1)
