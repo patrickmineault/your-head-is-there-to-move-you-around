@@ -4,15 +4,21 @@ import pvc1_loader
 
 import datetime
 import itertools
+import os
 
+import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
+
+import numpy as np
 import torch
 from torch import nn
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 import torch.autograd.profiler as profiler
 from torchvision import transforms
+import torchvision.models as models
+import torch.nn.functional as F
 
-import os
 
 def get_all_layers(net, prefix=[]):
     if hasattr(net, '_modules'):
@@ -26,8 +32,8 @@ def get_all_layers(net, prefix=[]):
 
 
 def save_state(net, title, output_dir):
-    datestr = str(datetime.datetime.now()).replace(':', '-')
-    torch.save(net.state_dict(), os.path.join(output_dir, f'{title}-{datestr}.pt'))
+    datuner = str(datetime.datetime.now()).replace(':', '-')
+    torch.save(net.state_dict(), os.path.join(output_dir, f'{title}-{datuner}.pt'))
 
 def main(data_root='/storage/crcns/pvc1/', 
          output_dir='/storage/trained/xception2d'):
@@ -62,63 +68,98 @@ def main(data_root='/storage/crcns/pvc1/',
                                 nframedelay=0)
                                 
     trainloader = torch.utils.data.DataLoader(trainset, 
-                                              batch_size=8, 
+                                              batch_size=1, 
                                               shuffle=True,
                                               pin_memory=True)
 
-    testset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), 
+    tuneset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), 
                                split='tune', 
                                nt=32,
                                ntau=9,
                                nframedelay=0)
-    testloader = torch.utils.data.DataLoader(testset, 
-                                             batch_size=8, 
+    tuneloader = torch.utils.data.DataLoader(tuneset, 
+                                             batch_size=1, 
                                              shuffle=True,
                                              pin_memory=True)
-    testloader_iter = iter(testloader)
+    tuneloader_iter = iter(tuneloader)
 
     print("Init models")    
 
+    nfeats = 32
     subnet = xception.Xception(start_kernel_size=7, 
                                nblocks=0, 
-                               nstartfeats=32)
+                               nstartfeats=nfeats)
+
+    """
+    resnet18 = models.resnet18(pretrained=True)
+    subnet.conv1.weight.data = resnet18.conv1.weight.data
     subnet.to(device=device)
+    """
 
     net = separable_net.LowRankNet(subnet, 
                                    trainset.total_electrodes, 
-                                   32, 
-                                   109, 
-                                   109, 
-                                   trainset.ntau).to(device)
+                                   nfeats, 
+                                   53, 
+                                   53, 
+                                   trainset.ntau,
+                                   9).to(device)
 
-    rc = transforms.RandomCrop(223)
+    def ds():
+        downsample_filt = torch.tensor([[.25, .5, .25], [.5, 1.0, .5], [.25, .5, .25]]).view(1, 1, 3, 3).to(device=device)
+        downsample_filt /= 4.0
+
+        def d(X):
+            return F.conv2d(X.reshape(-1, 1, X.shape[3], X.shape[4]), 
+                            downsample_filt, 
+                            stride=2).reshape(X.shape[0], 
+                                X.shape[1], 
+                                X.shape[2], 
+                                (X.shape[3]-1)//2,
+                                (X.shape[4]-1)//2)
+
+        return d
+
+    # Downsampling helps reduce compute and decreases the 
+    rc = transforms.Compose([ds()])
 
     net.to(device=device)
 
+    # Load a baseline with pre-trained weights
+    """
+    net.load_state_dict(
+        torch.load('models/shallow/xception.ckpt-0007215-2020-12-15 00-02-15.355483.pt')
+    )
+    """
+
     layers = get_all_layers(net)
 
-    criterion = nn.MSELoss()
-    # optimizer = optim.SGD(net.parameters(), lr=1e-2, momentum=0.9)
     optimizer = optim.Adam(net.parameters(), lr=1e-2)
+    subnet.requires_grad_(False)
 
     m, n = 0, 0
     print_frequency = 25
-    test_loss = 0.0
+    tune_loss = 0.0
     ckpt_frequency = 2500
     
     try:
         for epoch in range(20):  # loop over the dataset multiple times
             running_loss = 0.0
             for i, data in enumerate(trainloader, 0):
+                net.train()
+                if n > 1000:
+                    # Time to turn on the heat.
+                    subnet.requires_grad_(True)
+
                 # get the inputs; data is a list of [inputs, labels]
                 X, M, labels = data
                 X, M, labels = X.to(device), M.to(device), labels.to(device)
 
+                optimizer.zero_grad()
+
                 # zero the parameter gradients
                 X = rc(X)
-
-                optimizer.zero_grad()
                 outputs = net((X, M))
+
                 mask = torch.any(M, dim=0)
                 M = M[:, mask]
 
@@ -154,46 +195,66 @@ def main(data_root='/storage/crcns/pvc1/',
                         writer.add_histogram(f'Weights/{name}/hist', 
                                         param.view(-1), n)
 
-                    writer.add_images('Weights/conv1d/img', subnet.conv1.weight, n)
+                    writer.add_images('Weights/conv1d/img', subnet.conv1.weight * .5 + .5, n)
 
                     print('[%d, %5d] average train loss: %.3f' % (epoch + 1, i + 1, running_loss / print_frequency ))
                     running_loss = 0
 
-                if i % 7 == 0:
+                    # Plot the positions of the receptive fields
+                    fig = plt.figure(figsize=(6, 6))
+                    ax = plt.gca()
+                    for i in range(trainset.total_electrodes):
+                        ellipse = Ellipse((net.wx[i].item(), net.wy[i].item()), 
+                                        width=2.35*(.1 + abs(net.wsigmax[i].item())),
+                                        height=2.35*(.1 + abs(net.wsigmay[i].item())),
+                                        facecolor='none',
+                                        edgecolor=[0, 0, 0, .5]
+                                        )
+                        ax.add_patch(ellipse)
+                    ax.plot(net.wx.cpu().detach().numpy(), net.wy.cpu().detach().numpy(), 'r.')
+                    ax.set_xlim((-1.1, 1.1))
+                    ax.set_ylim((1.1, -1.1))
+
+                    writer.add_figure('RF', fig, n)
+
+                if i % 10 == 0:
+                    net.eval()
                     try:
-                        test_data = next(testloader_iter)
+                        tune_data = next(tuneloader_iter)
                     except StopIteration:
-                        testloader_iter = iter(testloader)
-                        test_data = next(testloader_iter)
+                        tuneloader_iter = iter(tuneloader)
+                        tune_data = next(tuneloader_iter)
                     
                     # get the inputs; data is a list of [inputs, labels]
-                    X, M, labels = test_data
-                    X, M, labels = X.to(device), M.to(device), labels.to(device)
+                    with torch.no_grad():
+                        X, M, labels = tune_data
+                        X, M, labels = X.to(device), M.to(device), labels.to(device)
 
-                    outputs = net((X, M))
-                    mask = torch.any(M, dim=0)
-                    M = M[:, mask]
-                    loss = ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
+                        X = rc(X)
+                        outputs = net((X, M))
+                        mask = torch.any(M, dim=0)
+                        M = M[:, mask]
+                        loss = ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
 
-                    writer.add_scalar('Loss/test', loss.item(), n)
+                        writer.add_scalar('Loss/tune', loss.item(), n)
 
-                    test_loss += loss.item()
+                        tune_loss += loss.item()
                     m += 1
 
                     if m == print_frequency:
-                        print(f"Test accuracy: {test_loss /  print_frequency:.3f}")
-                        test_loss = 0
+                        print(f"tune accuracy: {tune_loss /  print_frequency:.3f}")
+                        tune_loss = 0
                         m = 0
 
                 n += 1
 
                 if n % ckpt_frequency == 0:
-                    save_state(net, f'xception.ckpt{n}', output_dir)
+                    save_state(net, f'xception.ckpt-{n:07}', output_dir)
                     
     except KeyboardInterrupt:
-        save_state(net, f'xception.ckpt{n}', output_dir)
+        save_state(net, f'xception.ckpt-{n:07}', output_dir)
 
 if __name__ == "__main__":
     print("Getting into main")
-    main('.', 'models/shallow')
+    main('./data', 'models/shallow')
 
