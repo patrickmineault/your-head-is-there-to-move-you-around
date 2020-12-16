@@ -48,7 +48,7 @@ class GaborPyramid(nn.Module):
             if i == 0:
                 maps.append(magnitude)
             else:
-                maps.append(F.interpolate(magnitude, scale_factor=2**i, mode='bilinear')[:, :, :X.shape[2], :X.shape[3]])
+                maps.append(F.interpolate(magnitude, scale_factor=2**i, mode='bilinear', align_corners=False)[:, :, :X.shape[2], :X.shape[3]])
 
             X_ = F.conv2d(X_, self.downsample_filt, padding=1, stride=2)
         
