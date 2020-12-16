@@ -128,9 +128,12 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-crcns-ringach-data/
-models/
-runs/
-
+# Tools
 .vscode/
 wandb
+
+# Local folders
+models/
+runs/
+data/
+
