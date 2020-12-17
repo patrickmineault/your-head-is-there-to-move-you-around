@@ -1,7 +1,7 @@
 import sys
 sys.path.append('../')
 
-import pvc1_loader
+from loaders import pvc1
 import tempfile
 import time
 import unittest
@@ -10,7 +10,7 @@ from pprint import pprint
 
 class TestPvc1Loader(unittest.TestCase):
     def test_batching(self):
-        loader = pvc1_loader.PVC1('../crcns-ringach-data/',
+        loader = pvc1.PVC1('../data/crcns-ringach-data/',
                                   ntau=7)
 
         trainloader = torch.utils.data.DataLoader(loader, 
@@ -26,7 +26,7 @@ class TestPvc1Loader(unittest.TestCase):
         self.assertEqual(y.shape[2], loader.nt)
 
     def test_sequential(self):
-        loader = pvc1_loader.PVC1('../crcns-ringach-data/',
+        loader = pvc1.PVC1('../data/crcns-ringach-data/',
                                   ntau=7)
         
         (X, rg, y) = loader[0]
@@ -57,11 +57,11 @@ class TestPvc1Loader(unittest.TestCase):
         tmp_dir = tempfile.mkdtemp()
 
         # The first time around, it should be very slow.
-        self.assertTrue(pvc1_loader.download(tmp_dir))
+        self.assertTrue(pvc1.download(tmp_dir))
 
         # The second time around, it should be much faster.
         t0 = time.time()
-        self.assertTrue(pvc1_loader.download(tmp_dir))
+        self.assertTrue(pvc1.download(tmp_dir))
         self.assertLess(time.time() - t0, 2)
 
 

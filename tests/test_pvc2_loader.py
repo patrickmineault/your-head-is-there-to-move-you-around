@@ -1,16 +1,16 @@
 import sys
 sys.path.append('../')
 
-import pvc2_loader
+from loaders import pvc2
 import tempfile
 import time
 import unittest
 import torch
 from pprint import pprint
 
-class TestPvc1Loader(unittest.TestCase):
+class TestPvc2Loader(unittest.TestCase):
     def test_sequential(self):
-        loader = pvc2_loader.PVC2('../data/crcns-pvc2/', ntau=7)
+        loader = pvc2.PVC2('../data/crcns-pvc2/', ntau=7)
 
         for spktimes in loader.spktimes:
             for i in range(1, len(spktimes)):
@@ -21,7 +21,7 @@ class TestPvc1Loader(unittest.TestCase):
             self.assertGreaterEqual(24, framerate)
 
     def test_data(self):
-        loader = pvc2_loader.PVC2('../data/crcns-pvc2/', nt=32, ntau=7)
+        loader = pvc2.PVC2('../data/crcns-pvc2/', nt=32, ntau=7)
 
         X, m, y = loader[0]
         

@@ -1,4 +1,4 @@
-import mat_utils
+from . import utils
 
 import datetime
 import glob
@@ -121,7 +121,7 @@ class PVC2(torch.utils.data.Dataset):
 
         n = 0
         for dataset, mat_path in im_mat:
-            the_dict = mat_utils.load_mat_as_dict(
+            the_dict = utils.load_mat_as_dict(
                 os.path.join(root, '2D_noise_natural', 'Stimulus_Files', mat_path)
             )
             ims = the_dict['mov']

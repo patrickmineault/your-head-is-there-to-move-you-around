@@ -1,4 +1,4 @@
-import mat_utils
+from . import utils
 
 import datetime
 import glob
@@ -78,7 +78,7 @@ class PVC1(torch.utils.data.Dataset):
         cumulative_electrodes = 0
         nrepeats = []
         for path in paths:
-            mat_file = mat_utils.load_mat_as_dict(path)
+            mat_file = utils.load_mat_as_dict(path)
             key = path
             self.mat_files[key] = mat_file
 
