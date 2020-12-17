@@ -173,6 +173,7 @@ class PVC4(torch.utils.data.Dataset):
         block_size = (block_len * framerate) // nt
         sequence = []
         n_electrodes = 0
+        
         for cell_files in cell_info.values():
             ntraining_frames = sum([x['images'].shape[0] for x in cell_files])
             if ntraining_frames < min_seconds * framerate:
@@ -199,8 +200,7 @@ class PVC4(torch.utils.data.Dataset):
             
             n = 0
             nskip = nt
-            
-            cell_num = 0
+
             for i, experiment in enumerate(cell_files):
                 sz = experiment['images'].shape[1]
                 if sz < largest_size:
@@ -212,7 +212,7 @@ class PVC4(torch.utils.data.Dataset):
                     X[:, rg, rg] = experiment['images']
                     experiment['images'] = X
 
-                nframes = experiment['images'].shape[0]
+                nframes = len(experiment['spktimes'])
 
                 for start_time in range(self.nframestart, nframes, nskip):
                     if start_time + nskip + 1 > nframes:
@@ -235,18 +235,19 @@ class PVC4(torch.utils.data.Dataset):
                             'spikes': spk,
                             'split': split,
                             'cellid': experiment['cellid'],
-                            'cellnum': cell_num
+                            'cellnum': n_electrodes,
                         })
 
                     n += 1
-
-                cell_num += 1
 
             assert n > 0
             n_electrodes += 1
         
         self.sequence = sequence
         self.total_electrodes = n_electrodes
+
+        if self.total_electrodes == 0:
+            raise Exception("Didn't find any data")
 
     def __getitem__(self, idx):
         # Load a single segment of length idx from disk.

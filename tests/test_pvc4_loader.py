@@ -36,6 +36,13 @@ class TestPvc4Loader(unittest.TestCase):
                            ny=64,
                            split='train',
                            )
+        
+        self.assertEqual(len({x['cellnum']: 1 for x in loader.sequence}), 
+                         loader.total_electrodes)
+        
+        self.assertEqual(len({x['cellid']: 1 for x in loader.sequence}), 
+                         loader.total_electrodes)
+
         X, m, y = loader[0]
         self.assertEqual(X.shape[3], 64)
         self.assertEqual(X.shape[1], loader.nt + loader.ntau - 1)
