@@ -1,7 +1,8 @@
 import xception
 import separable_net
-import pvc1_loader
+from loaders import pvc1, pvc2, pvc4
 
+import argparse
 import datetime
 import itertools
 import os
@@ -32,16 +33,128 @@ def get_all_layers(net, prefix=[]):
 
 
 def save_state(net, title, output_dir):
-    datuner = str(datetime.datetime.now()).replace(':', '-')
-    torch.save(net.state_dict(), os.path.join(output_dir, f'{title}-{datuner}.pt'))
+    datestr = str(datetime.datetime.now()).replace(':', '-')
+    torch.save(net.state_dict(), os.path.join(output_dir, f'{title}-{datestr}.pt'))
 
-def main(data_root='/storage/crcns/pvc1/', 
-         output_dir='/storage/trained/xception2d'):
+def get_dataset(args):
+    if args.dataset == 'pvc1':
+        trainset = pvc1.PVC1(os.path.join(args.data_root, 'crcns-ringach-data'), 
+                                    split='train', 
+                                    nt=32, 
+                                    ntau=9, 
+                                    nframedelay=0)
 
+        tuneset = pvc1.PVC1(os.path.join(args.data_root, 'crcns-ringach-data'), 
+                                split='tune', 
+                                nt=32,
+                                ntau=9,
+                                nframedelay=0)
+
+        transform = transforms.RandomCrop(223)
+        sz = 223
+    elif args.dataset == 'pvc2':
+        trainset = pvc2.PVC2(os.path.join(args.data_root, 'pvc2'), 
+                                    split='train', 
+                                    nt=32, 
+                                    ntau=9, 
+                                    nframedelay=0)
+
+        tuneset = pvc2.PVC2(os.path.join(args.data_root, 'pvc2'), 
+                                split='tune', 
+                                nt=32,
+                                ntau=9,
+                                nframedelay=0)
+        sz = 12
+    elif args.dataset == 'pvc4':
+        trainset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-pvc4'), 
+                                    split='train', 
+                                    nt=32, 
+                                    nx=65,
+                                    ny=65,
+                                    ntau=9, 
+                                    nframedelay=0,
+                                    single_cell=args.single_cell)
+
+        tuneset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-pvc4'), 
+                                split='tune', 
+                                nt=32,
+                                nx=65,
+                                ny=65,
+                                ntau=9,
+                                nframedelay=0,
+                                single_cell=args.single_cell)
+
+        transform = lambda x: x
+        sz = 30
+    return trainset, tuneset, transform, sz
+
+
+def constraints(net, mask):
+    return 10 * (
+        F.relu(abs(net.sampler.wx) - 1) ** 2 + 
+        F.relu(abs(net.sampler.wy) - 1) ** 2 + 
+        F.relu(net.sampler.wsigmax - 1) ** 2 + 
+        F.relu(net.sampler.wsigmay - 1) ** 2
+    ).sum() + .001 * (
+        abs(net.sampler.wx[mask]) + 
+        abs(net.sampler.wy[mask]) + 
+        abs(net.sampler.wsigmax[mask]) + 
+        abs(net.sampler.wsigmay[mask])
+    ).sum()
+
+
+def log_net(net, layers, writer, n):
+    for name, layer in layers:
+        if hasattr(layer, 'weight'):
+            writer.add_scalar(f'Weights/{name}/mean', 
+                            layer.weight.mean(), n)
+            writer.add_scalar(f'Weights/{name}/std', 
+                            layer.weight.std(), n)
+            writer.add_histogram(f'Weights/{name}/hist', 
+                            layer.weight.view(-1), n)
+
+    for name, param in net.sampler._parameters.items():
+        writer.add_scalar(f'Weights/{name}/mean', 
+                        param.mean(), n)
+        writer.add_scalar(f'Weights/{name}/std', 
+                        param.std(), n)
+        writer.add_histogram(f'Weights/{name}/hist', 
+                        param.view(-1), n)
+
+    writer.add_images('Weights/conv1d/img', 
+                      .25*net.subnet.conv1.weight + .5, n)
+
+    # Plot the positions of the receptive fields
+    fig = plt.figure(figsize=(6, 6))
+    ax = plt.gca()
+    for i in range(net.ntargets):
+        ellipse = Ellipse((net.sampler.wx[i].item(), net.sampler.wy[i].item()), 
+                        width=2.35*(.1 + F.relu(net.sampler.wsigmax[i]).item()),
+                        height=2.35*(.1 + F.relu(net.sampler.wsigmay[i]).item()),
+                        facecolor='none',
+                        edgecolor=[0, 0, 0, .5]
+                        )
+        ax.add_patch(ellipse)
+        ax.text(net.sampler.wx[i].item() + .05, net.sampler.wy[i].item(), str(i))
+
+
+    ax.plot(net.sampler.wx.cpu().detach().numpy(), net.sampler.wy.cpu().detach().numpy(), 'r.')
+    ax.set_xlim((-1.1, 1.1))
+    ax.set_ylim((1.1, -1.1))
+
+    writer.add_figure('RF', fig, n)
+
+    fig = plt.figure(figsize=(6, 4))
+    plt.plot(net.wt.cpu().detach().numpy())
+    writer.add_figure('wt', fig, n)
+
+
+def main(args):
     print("Main")
+    output_dir = os.path.join(args.output_dir, args.exp_name)
     # Train a network
     try:
-        os.makedirs(data_root)
+        os.makedirs(args.data_root)
     except FileExistsError:
         pass
 
@@ -50,105 +163,97 @@ def main(data_root='/storage/crcns/pvc1/',
     except FileExistsError:
         pass
     
-    writer = SummaryWriter()
+    
+    writer = SummaryWriter(comment=args.exp_name)
+    writer.add_hparams(vars(args), {})
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device == 'cpu':
         print("No CUDA! Sad!")
 
-    print("Download data")
-    # pvc1_loader.download(data_root, 'https://storage.googleapis.com/vpl-bucket/')
-
-    print("Loading data")
-
-    trainset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), 
-                                split='train', 
-                                nt=32, 
-                                ntau=9, 
-                                nframedelay=0)
-                                
+    trainset, tuneset, transform, sz = get_dataset(args)
     trainloader = torch.utils.data.DataLoader(trainset, 
                                               batch_size=1, 
                                               shuffle=True,
                                               pin_memory=True)
 
-    tuneset = pvc1_loader.PVC1(os.path.join(data_root, 'crcns-ringach-data'), 
-                               split='tune', 
-                               nt=32,
-                               ntau=9,
-                               nframedelay=0)
     tuneloader = torch.utils.data.DataLoader(tuneset, 
                                              batch_size=1, 
                                              shuffle=True,
                                              pin_memory=True)
+
     tuneloader_iter = iter(tuneloader)
 
-    print("Init models")    
+    print("Init models")
+    
 
-    nfeats = 32
     subnet = xception.Xception(start_kernel_size=7, 
-                               nblocks=0, 
-                               nstartfeats=nfeats)
+                               nblocks=args.num_blocks, 
+                               nstartfeats=args.nfeats)
 
-    """
-    resnet18 = models.resnet18(pretrained=True)
-    subnet.conv1.weight.data = resnet18.conv1.weight.data
-    subnet.to(device=device)
-    """
+    if args.resnet_init:
+        resnet18 = models.resnet18(pretrained=True)
+        subnet.conv1.weight.data = resnet18.conv1.weight.data
+        subnet.to(device=device)
+
+    if args.no_sample:
+        sampler_size = 0
+    else:
+        sampler_size = 9
 
     net = separable_net.LowRankNet(subnet, 
                                    trainset.total_electrodes, 
-                                   nfeats, 
-                                   53, 
-                                   53, 
+                                   args.nfeats, 
+                                   sz, 
+                                   sz, 
                                    trainset.ntau,
-                                   9).to(device)
+                                   sampler_size=sampler_size).to(device)
 
-    def ds():
-        downsample_filt = torch.tensor([[.25, .5, .25], [.5, 1.0, .5], [.25, .5, .25]]).view(1, 1, 3, 3).to(device=device)
-        downsample_filt /= 4.0
-
-        def d(X):
-            return F.conv2d(X.reshape(-1, 1, X.shape[3], X.shape[4]), 
-                            downsample_filt, 
-                            stride=2).reshape(X.shape[0], 
-                                X.shape[1], 
-                                X.shape[2], 
-                                (X.shape[3]-1)//2,
-                                (X.shape[4]-1)//2)
-
-        return d
-
-    # Downsampling helps reduce compute and decreases the 
-    rc = transforms.Compose([ds()])
 
     net.to(device=device)
 
     # Load a baseline with pre-trained weights
-    """
-    net.load_state_dict(
-        torch.load('models/shallow/xception.ckpt-0007215-2020-12-15 00-02-15.355483.pt')
-    )
-    """
+    if args.load_ckpt != '':
+        net.load_state_dict(
+            torch.load(args.load_ckpt)
+        )
 
     layers = get_all_layers(net)
 
-    optimizer = optim.Adam(net.parameters(), lr=1e-2)
+    optimizer = optim.Adam(net.parameters(), lr=args.learning_rate)
+    net.sampler.requires_grad_(False)
     subnet.requires_grad_(False)
 
+    activations = {}
+    def hook(name):
+        def hook_fn(m, i, o):
+            activations[name] = o
+        return hook_fn
+
+    net.subnet.relu.register_forward_hook(hook('relu'))
+
     m, n = 0, 0
-    print_frequency = 25
+    print_frequency = 100
     tune_loss = 0.0
     ckpt_frequency = 2500
     
     try:
-        for epoch in range(20):  # loop over the dataset multiple times
+        for epoch in range(args.num_epochs):  # loop over the dataset multiple times
             running_loss = 0.0
             for i, data in enumerate(trainloader, 0):
                 net.train()
-                if n > 1000:
-                    # Time to turn on the heat.
-                    subnet.requires_grad_(True)
+                if n > args.warmup:
+                    # Alternate between fitting the weights and fitting 
+                    # the receptive field.
+                    if (n // 2000) % 2 == 0:
+                        subnet.requires_grad_(True)
+                        net.sampler.requires_grad_(False)
+                    else:
+                        subnet.requires_grad_(False)
+                        net.sampler.requires_grad_(True)
+                        # Put the sampler in eval mode - train is very noisy.
+                        # net.sampler.eval()
+                        
 
                 # get the inputs; data is a list of [inputs, labels]
                 X, M, labels = data
@@ -157,11 +262,15 @@ def main(data_root='/storage/crcns/pvc1/',
                 optimizer.zero_grad()
 
                 # zero the parameter gradients
-                X = rc(X)
+                X = transform(X)
                 outputs = net((X, M))
 
                 mask = torch.any(M, dim=0)
                 M = M[:, mask]
+
+                # Add some soft constraints
+                if n > args.warmup:
+                    loss += constraints(net, mask)
 
                 # masked mean squared error
                 loss = ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
@@ -178,45 +287,18 @@ def main(data_root='/storage/crcns/pvc1/',
                 writer.add_scalar('Loss/train', loss.item(), n)
                 
                 if i % print_frequency == print_frequency - 1:
-                    for name, layer in layers:
-                        if hasattr(layer, 'weight'):
-                            writer.add_scalar(f'Weights/{name}/mean', 
-                                            layer.weight.mean(), n)
-                            writer.add_scalar(f'Weights/{name}/std', 
-                                            layer.weight.std(), n)
-                            writer.add_histogram(f'Weights/{name}/hist', 
-                                            layer.weight.view(-1), n)
-
-                    for name, param in net._parameters.items():
-                        writer.add_scalar(f'Weights/{name}/mean', 
-                                        param.mean(), n)
-                        writer.add_scalar(f'Weights/{name}/std', 
-                                        param.std(), n)
-                        writer.add_histogram(f'Weights/{name}/hist', 
-                                        param.view(-1), n)
-
-                    writer.add_images('Weights/conv1d/img', subnet.conv1.weight * .5 + .5, n)
-
-                    print('[%d, %5d] average train loss: %.3f' % (epoch + 1, i + 1, running_loss / print_frequency ))
+                    log_net(net, layers, writer, n)
+                    print('[%02d, %04d] average train loss: %.3f' % (epoch + 1, i + 1, running_loss / print_frequency ))
                     running_loss = 0
-
-                    # Plot the positions of the receptive fields
-                    fig = plt.figure(figsize=(6, 6))
-                    ax = plt.gca()
-                    for i in range(trainset.total_electrodes):
-                        ellipse = Ellipse((net.wx[i].item(), net.wy[i].item()), 
-                                        width=2.35*(.1 + abs(net.wsigmax[i].item())),
-                                        height=2.35*(.1 + abs(net.wsigmay[i].item())),
-                                        facecolor='none',
-                                        edgecolor=[0, 0, 0, .5]
-                                        )
-                        ax.add_patch(ellipse)
-                    ax.plot(net.wx.cpu().detach().numpy(), net.wy.cpu().detach().numpy(), 'r.')
-                    ax.set_xlim((-1.1, 1.1))
-                    ax.set_ylim((1.1, -1.1))
-
-                    writer.add_figure('RF', fig, n)
-
+                    #print(activations['relu'].shape)
+                    the_max = abs(activations['relu']).max()
+                    the_X_max = abs(X).max()
+                    writer.add_images('Activations/input', 
+                                      .5 * X.squeeze() / the_X_max + .5, 
+                                      n, dataformats='CNHW')
+                    writer.add_images('Activations/relu', 
+                                      .5 * activations['relu'].reshape(-1, 1, net.height_out, net.width_out) / the_max + .5, 
+                                      n, dataformats='NCHW')
                 if i % 10 == 0:
                     net.eval()
                     try:
@@ -230,7 +312,7 @@ def main(data_root='/storage/crcns/pvc1/',
                         X, M, labels = tune_data
                         X, M, labels = X.to(device), M.to(device), labels.to(device)
 
-                        X = rc(X)
+                        X = transform(X)
                         outputs = net((X, M))
                         mask = torch.any(M, dim=0)
                         M = M[:, mask]
@@ -249,12 +331,33 @@ def main(data_root='/storage/crcns/pvc1/',
                 n += 1
 
                 if n % ckpt_frequency == 0:
-                    save_state(net, f'xception.ckpt-{n:07}', output_dir)
+                    save_state(net, f'model.ckpt-{n:07}', output_dir)
                     
     except KeyboardInterrupt:
-        save_state(net, f'xception.ckpt-{n:07}', output_dir)
+        save_state(net, f'model.ckpt-{n:07}', output_dir)
 
 if __name__ == "__main__":
-    print("Getting into main")
-    main('./data', 'models/shallow')
+    desc = "Train a neural net"
+    parser = argparse.ArgumentParser(description=desc)
+    
+    parser.add_argument("--exp_name", required=True, help='Friendly name of experiment')
+    
+    parser.add_argument("--learning_rate", default=5e-3, type=float, help='Learning rate')
+    parser.add_argument("--num_epochs", default=20, type=int, help='Number of epochs to train')
+    parser.add_argument("--nfeats", default=64, type=int, help='Number of features')
+    parser.add_argument("--num_blocks", default=0, type=int, help="Num Xception blocks")
+    parser.add_argument("--warmup", default=5000, type=int, help="Number of iterations before unlocking tuning RFs and filters")
+    parser.add_argument("--single_cell", default=-1, type=int, help="Fit data to a single cell with this index if true")
+
+    parser.add_argument("--lock_rfs", default=False, help="Lock receptive field positions to start", action='store_true')
+    parser.add_argument("--resnet_init", default=False, help='Whether to initialize with a pre-trained resnet', action='store_true')
+    parser.add_argument("--no_sample", default=False, help='Whether to use a normal gaussian layer rather than a sampled one', action='store_true')
+    
+    parser.add_argument("--load_ckpt", default='', help="Load checkpoint")
+    parser.add_argument("--dataset", default='pvc4', help='Dataset (currently pvc1, pvc2 or pvc4)')
+    parser.add_argument("--data_root", default='./data', help='Data path')
+    parser.add_argument("--output_dir", default='./models', help='Output path for models')
+    
+    args = parser.parse_args()
+    main(args)
 

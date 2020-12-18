@@ -7,7 +7,14 @@ class SeparableConv2d(nn.Module):
         super(SeparableConv2d,self).__init__()
 
         # separable convolution from groups=in_channels
-        self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size, stride, padding, dilation, groups=in_channels, bias=bias)
+        self.conv1 = nn.Conv2d(in_channels, 
+                               in_channels, 
+                               kernel_size, 
+                               stride, 
+                               padding, 
+                               dilation, 
+                               groups=in_channels, 
+                               bias=bias)
 
         # 1x1 convolution to mix the channels together
         self.pointwise = nn.Conv2d(in_channels, out_channels, 1, 1, 0, 1, 1, bias=bias)
@@ -90,7 +97,7 @@ class Xception(nn.Module):
                                bias=False
                                )
         # self.bn1 = nn.BatchNorm2d(nstartfeats)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
         self.nblocks = nblocks
 
         if self.nblocks >= 1:

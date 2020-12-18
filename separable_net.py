@@ -70,11 +70,14 @@ class GaussianSampler(nn.Module):
     def forward(self, inputs):
         """Takes a stack of images and a mask and samples them using Gaussians.
         
-        Dimension order: batch_dim, nchannels, wx, wy
+        Dimension order: batch_dim, nchannels, wy, wx
         Output: batch_dim, nchannels
         """
         X, mask = inputs
 
+        batch_dim, nchannels, ny, nx = X.shape
+        assert ny == nx
+        
         assert mask.dtype == torch.bool
         assert X.ndim == 4
         assert X.shape[1] == mask.sum()
@@ -98,8 +101,8 @@ class GaussianSampler(nn.Module):
                  self.height_out / 4
             ) 
 
-            R = torch.einsum('ijk,jk->ij', X.reshape(X.shape[0],
-                                                     X.shape[1],
+            R = torch.einsum('ijk,jk->ij', X.reshape(batch_dim,
+                                                     nchannels,
                                                      -1), ws)
 
         else:
@@ -115,7 +118,11 @@ class GaussianSampler(nn.Module):
                     ], dim=3)
             
             # Right now, we have resampled the grid
+            assert grid.shape[0] == nchannels
             R = F.grid_sample(X.permute(1, 0, 2, 3), grid, align_corners=False)
+
+            assert R.shape[0] == nchannels
+            assert R.shape[1] == batch_dim
 
             # Now R is ntargets x (batch_dim x nt) x Y_small x X_small
 
@@ -123,8 +130,7 @@ class GaussianSampler(nn.Module):
             if self.training:
                 # Use a consistent position in space during evaluation
                 cat = torch.distributions.Categorical(self.pgrid_small)
-                idx = cat.sample([self.nchannels])
-                assert len(idx) == R.shape[0]
+                idx = cat.sample([nchannels])
 
                 # Haven't figured out how to do this with one call to index_select
                 R = torch.stack([
@@ -196,7 +202,7 @@ class LowRankNet(nn.Module):
         batch_dim, nchannels, nt, ny, nx = input_shape
         mask = torch.any(targets, dim=0)
         ntargets = mask.sum().item()
-
+        assert nx == ny
         assert x.ndim == 5
 
         # Start by mapping X through the sub-network.
@@ -206,14 +212,24 @@ class LowRankNet(nn.Module):
 
         x = self.subnet.forward(x)
 
-        # Now we're at (batch_dim x nt) x channels x Y x X
+        assert x.shape[0] == batch_dim * nt
+        assert x.shape[1] == self.channels_out
+        assert x.shape[2] == x.shape[3]
+
+        # Now we're at (batch_dim x nt) x ntargets x Y x X
         R = torch.tensordot(x, self.wc[:, mask], dims=([1], [0]))
+
+        assert R.shape[0] == batch_dim * nt
+        assert R.shape[1] == R.shape[2]
+        assert R.shape[3] == ntargets
 
         # Now at (batch_dim x nt) x Y x X x ntargets
         R = R.permute(0, 3, 1, 2)
 
-        # Now R is (batch_dim x nt) x ntargets x Y x X
-        # assert R.shape == (batch_dim * nt, ntargets, ny, nx)
+        assert R.shape[0] == batch_dim * nt
+        assert R.shape[1] == ntargets
+        assert R.shape[2] == R.shape[3]
+
         R = self.sampler.forward((R, mask))
 
         assert R.ndim == 2  
@@ -230,7 +246,7 @@ class LowRankNet(nn.Module):
                      bias=self.wb[mask], 
                      groups=ntargets)
 
-        return R
+        return F.leaky_relu(R, negative_slope=.1)
 
     
         

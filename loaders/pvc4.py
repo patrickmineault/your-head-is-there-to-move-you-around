@@ -87,6 +87,7 @@ class PVC4(torch.utils.data.Dataset):
                  nframedelay=0,
                  nframestart=15,
                  split='train',
+                 single_cell=-1,
                  ):
 
         block_len = 6  # in seconds
@@ -105,6 +106,7 @@ class PVC4(torch.utils.data.Dataset):
         self.ntau = ntau
         self.nframedelay = nframedelay
         self.nframestart = nframestart
+        self.single_cell = single_cell
 
         paths = []
         for item in glob.glob(os.path.join(root, 'Nat', '*', '*summary_file.mat')):
@@ -246,6 +248,11 @@ class PVC4(torch.utils.data.Dataset):
         self.sequence = sequence
         self.total_electrodes = n_electrodes
 
+        if self.single_cell != -1:
+            # Pick a single cell
+            self.sequence = [x for x in self.sequence if x['cellnum'] == self.single_cell]
+            self.total_electrodes = 1
+
         if self.total_electrodes == 0:
             raise Exception("Didn't find any data")
 
@@ -264,7 +271,7 @@ class PVC4(torch.utils.data.Dataset):
                              align_corners=False,
                              mode='bilinear')
 
-        X = (X - 20.0) / 40.0
+        X = (X - 40.0) / 40.0
 
         # Create a mask from the electrode range
         m = np.zeros((self.total_electrodes), dtype=np.bool)
