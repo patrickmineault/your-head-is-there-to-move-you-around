@@ -93,16 +93,16 @@ class GaussianSampler(nn.Module):
             if self.training:
                 # Single point sampling
                 precision = 1
-                x0 = (self.wx[mask] + torch.randn(len(mask)) * self.wsigmax[mask]).reshape((-1, 1, 1))
-                y0 = (self.wy[mask] + torch.randn(len(mask)) * self.wsigmay[mask]).reshape((-1, 1, 1))
+                x0 = (self.wx[mask] + torch.randn(len(mask), device=self.wx.device) * self.wsigmax[mask]).reshape((-1, 1, 1))
+                y0 = (self.wy[mask] + torch.randn(len(mask), device=self.wx.device) * self.wsigmay[mask]).reshape((-1, 1, 1))
             else:
                 # Put things in eval mode - use 1000 points.
                 # Single point sampling
                 precision = 1000
                 x0 = (self.wx[mask].reshape(-1, 1, 1) + 
-                      torch.randn(len(mask), precision, 1) * self.wsigmax[mask].reshape(-1, 1, 1))
+                      torch.randn(len(mask), precision, 1, device=self.wx.device) * self.wsigmax[mask].reshape(-1, 1, 1))
                 y0 = (self.wy[mask].reshape(-1, 1, 1) + 
-                      torch.randn(len(mask), precision, 1) * self.wsigmay[mask].reshape(-1, 1, 1))
+                      torch.randn(len(mask), precision, 1, device=self.wx.device) * self.wsigmay[mask].reshape(-1, 1, 1))
             
             x0 = torch.clamp(x0, self.xgrid.min().item(), self.xgrid.max().item())
             y0 = torch.clamp(y0, self.ygrid.min().item(), self.ygrid.max().item())

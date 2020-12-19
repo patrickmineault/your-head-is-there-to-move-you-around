@@ -20,6 +20,7 @@ from torchvision import transforms
 import torchvision.models as models
 import torch.nn.functional as F
 
+import wandb
 
 def get_all_layers(net, prefix=[]):
     if hasattr(net, '_modules'):
@@ -34,7 +35,9 @@ def get_all_layers(net, prefix=[]):
 
 def save_state(net, title, output_dir):
     datestr = str(datetime.datetime.now()).replace(':', '-')
-    torch.save(net.state_dict(), os.path.join(output_dir, f'{title}-{datestr}.pt'))
+    filename = os.path.join(output_dir, f'{title}-{datestr}.pt')
+    torch.save(net.state_dict(), filename)
+    return filename
 
 def get_dataset(args):
     if args.dataset == 'pvc1':
@@ -149,6 +152,30 @@ def log_net(net, layers, writer, n):
     writer.add_figure('wt', fig, n)
 
 
+def compute_corr(Yl, Yp):
+    corr = torch.zeros(Yl.shape[1], device=Yl.device)
+    for i in range(Yl.shape[1]):
+        yl, yp = (Yl[:, i].cpu().detach().numpy(), 
+                  Yp[:, i].cpu().detach().numpy())
+        yl = yl[~np.isnan(yl)]
+        yp = yp[~np.isnan(yp)]
+        corr[i] = np.corrcoef(yl, yp)[0, 1]
+    return corr
+
+
+def get_subnet(args):
+    if args.submodel == 'xception2d':
+        subnet = xception.Xception(start_kernel_size=7, 
+                                   nblocks=args.num_blocks, 
+                                   nstartfeats=args.nfeats)
+    elif args.submodel == 'gaborpyramid2d':
+            subnet = nn.Sequential(
+                gabor_pyramid.GaborPyramid(4),
+                transforms.Normalize(2.2, 2.2)
+            )
+    return subnet
+
+
 def main(args):
     print("Main")
     output_dir = os.path.join(args.output_dir, args.exp_name)
@@ -186,28 +213,20 @@ def main(args):
 
     print("Init models")
     
-
-    subnet = xception.Xception(start_kernel_size=7, 
-                               nblocks=args.num_blocks, 
-                               nstartfeats=args.nfeats)
+    subnet = get_subnet(args)
 
     if args.resnet_init:
         resnet18 = models.resnet18(pretrained=True)
         subnet.conv1.weight.data = resnet18.conv1.weight.data
-        subnet.to(device=device)
-
-    if args.no_sample:
-        sampler_size = 0
-    else:
-        sampler_size = 9
-
+        
+    subnet.to(device=device)
     net = separable_net.LowRankNet(subnet, 
                                    trainset.total_electrodes, 
                                    args.nfeats, 
                                    sz, 
                                    sz, 
                                    trainset.ntau,
-                                   sampler_size=sampler_size).to(device)
+                                   sample=(not args.no_sample)).to(device)
 
 
     net.to(device=device)
@@ -236,6 +255,10 @@ def main(args):
     print_frequency = 100
     tune_loss = 0.0
     ckpt_frequency = 2500
+
+    Yl = np.nan * torch.ones(100000, trainset.total_electrodes, device=device)
+    Yp = np.nan * torch.ones_like(Yl)
+    total_timesteps = torch.zeros(trainset.total_electrodes, device=device, dtype=torch.long)
     
     try:
         for epoch in range(args.num_epochs):  # loop over the dataset multiple times
@@ -245,15 +268,13 @@ def main(args):
                 if n > args.warmup:
                     # Alternate between fitting the weights and fitting 
                     # the receptive field.
-                    if (n // 2000) % 2 == 0:
+                    if (n // 200) % 10 != 0:
                         subnet.requires_grad_(True)
                         net.sampler.requires_grad_(False)
                     else:
+                        # Move the RFs
                         subnet.requires_grad_(False)
                         net.sampler.requires_grad_(True)
-                        # Put the sampler in eval mode - train is very noisy.
-                        # net.sampler.eval()
-                        
 
                 # get the inputs; data is a list of [inputs, labels]
                 X, M, labels = data
@@ -306,6 +327,14 @@ def main(args):
                     except StopIteration:
                         tuneloader_iter = iter(tuneloader)
                         tune_data = next(tuneloader_iter)
+
+                        if n > 0:
+                            corr = compute_corr(Yl, Yp)
+                            writer.add_histogram('tune/corr', corr, n)
+                            
+                        Yl[:, :] = np.nan
+                        Yp[:, :] = np.nan
+                        total_timesteps *= 0
                     
                     # get the inputs; data is a list of [inputs, labels]
                     with torch.no_grad():
@@ -316,6 +345,18 @@ def main(args):
                         outputs = net((X, M))
                         mask = torch.any(M, dim=0)
                         M = M[:, mask]
+
+                        nnz = torch.nonzero(mask)[0]
+                        assert labels.shape[1] == 1
+                        assert outputs.shape[1] == 1
+                        
+                        for k, j in enumerate(nnz):
+                            slc = slice(total_timesteps[j].item(), 
+                                        total_timesteps[j].item()+labels.shape[2])
+                            Yl[slc, j.item()] = labels[:, k, :]
+                            Yp[slc, j.item()] = outputs[:, k, :]
+                            total_timesteps[j.item()] += labels.shape[2]
+
                         loss = ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
 
                         writer.add_scalar('Loss/tune', loss.item(), n)
@@ -334,7 +375,26 @@ def main(args):
                     save_state(net, f'model.ckpt-{n:07}', output_dir)
                     
     except KeyboardInterrupt:
-        save_state(net, f'model.ckpt-{n:07}', output_dir)
+        pass
+
+    filename = save_state(net, f'model.ckpt-{n:07}', output_dir)
+
+    if n > 0:
+        print("Saving to weight and biases")
+        wandb.init(project="crcns-train_net.py", 
+                config=vars(args))
+        config = wandb.config
+        corr = corr[~np.isnan(corr)]
+        wandb.log({"tune_corr": corr})
+        wandb.watch(model, log="all")
+        torch.save(net.state_dict(), 
+                   os.path.join(wandb.run.dir, 'model.pt'))
+        wandb.save(filename)
+
+        print("done")
+    else:
+        print("Did not save result")
+    
 
 if __name__ == "__main__":
     desc = "Train a neural net"
@@ -342,6 +402,7 @@ if __name__ == "__main__":
     
     parser.add_argument("--exp_name", required=True, help='Friendly name of experiment')
     
+    parser.add_argument("--submodel", default='xception2d', type=str, help='Sub-model type (currently, either xception2d or gaborpyramid2d')
     parser.add_argument("--learning_rate", default=5e-3, type=float, help='Learning rate')
     parser.add_argument("--num_epochs", default=20, type=int, help='Number of epochs to train')
     parser.add_argument("--nfeats", default=64, type=int, help='Number of features')
