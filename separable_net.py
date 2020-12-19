@@ -17,12 +17,12 @@ class GaussianSampler(nn.Module):
                  nchannels: int, 
                  height_out: int, 
                  width_out: int,
-                 sampler_size: int):
+                 sample: bool):
         super(GaussianSampler, self).__init__()
         self.nchannels = nchannels
         self.height_out = height_out
         self.width_out = width_out
-        self.sampler_size = sampler_size
+        self.sample = sample
         
         self.init_params()
 
@@ -52,21 +52,6 @@ class GaussianSampler(nn.Module):
         self.register_buffer('xgrid', xgrid, False)
         self.register_buffer('ygrid', ygrid, False)
 
-        if self.sampler_size > 1:
-            # Use a sampler
-            ygrid_small, xgrid_small = torch.meshgrid(
-                torch.linspace(-2.0, 2.0, self.sampler_size),
-                torch.linspace(-2.0, 2.0, self.sampler_size)
-            )
-
-            pgrid_small = (
-                torch.exp(-xgrid_small ** 2 - ygrid_small ** 2)
-            )
-            pgrid_small = pgrid_small.view(-1) / pgrid_small.sum()
-            self.register_buffer('xgrid_small', xgrid_small, False)
-            self.register_buffer('ygrid_small', ygrid_small, False)
-            self.register_buffer('pgrid_small', pgrid_small, False)
-
     def forward(self, inputs):
         """Takes a stack of images and a mask and samples them using Gaussians.
         
@@ -82,17 +67,17 @@ class GaussianSampler(nn.Module):
         assert X.ndim == 4
         assert X.shape[1] == mask.sum()
 
-        if self.sampler_size <= 1:
-            # Don't use sampling
-            wsigmax = 0.1 + F.relu(self.wsigmax[mask].view(-1, 1))
-            wsigmay = 0.1 + F.relu(self.wsigmay[mask].view(-1, 1))
+        if not self.sample:
+            # Deterministic sampling
+            wsigmax = self.wsigmax[mask].view(-1, 1)
+            wsigmay = self.wsigmay[mask].view(-1, 1)
 
             dx = (((self.xgrid.reshape(1, -1) - 
                     self.wx[mask].view(-1, 1)) ** 2 / 2 / wsigmax ** 2))
             dy = (((self.ygrid.reshape(1, -1) - 
                     self.wy[mask].view(-1, 1)) ** 2 / 2 / wsigmay ** 2))
             
-            # We normalize so this roughly matches up with the sampling version.
+            # We normalize so this matches up with the sampling version exactly.
             ws = torch.exp(-dx -dy) / (
                 np.sqrt(2 * np.pi) * 
                  wsigmax * 
@@ -104,43 +89,37 @@ class GaussianSampler(nn.Module):
             R = torch.einsum('ijk,jk->ij', X.reshape(batch_dim,
                                                      nchannels,
                                                      -1), ws)
-
         else:
-            grid = torch.stack([
-                    self.wx[mask].reshape(-1, 1, 1) + 
-                    self.xgrid_small.reshape(1, 
-                        self.xgrid_small.shape[0], 
-                        self.xgrid_small.shape[1]) * (.1 + F.relu(self.wsigmax[mask].reshape(-1, 1, 1))),
-                    self.wy[mask].reshape(-1, 1, 1) + 
-                    self.ygrid_small.reshape(1, 
-                        self.ygrid_small.shape[0], 
-                        self.ygrid_small.shape[1]) * (.1 + F.relu(self.wsigmay[mask].reshape(-1, 1, 1))),
-                    ], dim=3)
+            if self.training:
+                # Single point sampling
+                precision = 1
+                x0 = (self.wx[mask] + torch.randn(len(mask)) * self.wsigmax[mask]).reshape((-1, 1, 1))
+                y0 = (self.wy[mask] + torch.randn(len(mask)) * self.wsigmay[mask]).reshape((-1, 1, 1))
+            else:
+                # Put things in eval mode - use 1000 points.
+                # Single point sampling
+                precision = 1000
+                x0 = (self.wx[mask].reshape(-1, 1, 1) + 
+                      torch.randn(len(mask), precision, 1) * self.wsigmax[mask].reshape(-1, 1, 1))
+                y0 = (self.wy[mask].reshape(-1, 1, 1) + 
+                      torch.randn(len(mask), precision, 1) * self.wsigmay[mask].reshape(-1, 1, 1))
             
-            # Right now, we have resampled the grid
-            assert grid.shape[0] == nchannels
-            R = F.grid_sample(X.permute(1, 0, 2, 3), grid, align_corners=False)
+            x0 = torch.clamp(x0, self.xgrid.min().item(), self.xgrid.max().item())
+            y0 = torch.clamp(y0, self.ygrid.min().item(), self.ygrid.max().item())
+            
+            grid = torch.stack([x0, y0], dim=3)
+            assert grid.shape[1] == precision
+            assert grid.shape[2] == 1
+            assert grid.shape[3] == 2
 
+            R = F.grid_sample(X.permute(1, 0, 2, 3), 
+                              grid, 
+                              align_corners=False)
             assert R.shape[0] == nchannels
             assert R.shape[1] == batch_dim
-
-            # Now R is ntargets x (batch_dim x nt) x Y_small x X_small
-
-            # Depending on evaluation mode, we can either sample or take a weighted mean
-            if self.training:
-                # Use a consistent position in space during evaluation
-                cat = torch.distributions.Categorical(self.pgrid_small)
-                idx = cat.sample([nchannels])
-
-                # Haven't figured out how to do this with one call to index_select
-                R = torch.stack([
-                    R.reshape(R.shape[0], R.shape[1], -1)[i, :, idx[i]] for i in range(R.shape[0])
-                    ], axis=0)
-            else:
-                R = torch.tensordot(R.view(R.shape[0], R.shape[1], -1), 
-                              self.pgrid_small.view(-1), dims=([2], [0]))
+            R = R.sum(axis=2).sum(axis=2) / precision
             R = R.T
-        
+    
         assert R.shape[0] == X.shape[0]
         return R
 
@@ -163,8 +142,8 @@ class LowRankNet(nn.Module):
         height_out: the number of vertical pixels coming out of subnet
         width_out: the number of horizontal pixels coming out of subnet
         nt: the number of weights in the convolution over time
-        sampler_size: how big the sampling kernel should be. If 0, don't use 
-            normal sampling.
+        sample: whether to sample the Gaussian envelope or 
+                not or do it deterministically.
     """
     def __init__(self, subnet: nn.Module, 
                        ntargets: int, 
@@ -172,7 +151,7 @@ class LowRankNet(nn.Module):
                        height_out: int, 
                        width_out: int, 
                        nt: int,
-                       sampler_size: int = 0):
+                       sample: bool = False):
         super(LowRankNet, self).__init__()
         self.subnet = subnet
         self.ntargets = ntargets
@@ -180,7 +159,7 @@ class LowRankNet(nn.Module):
         self.width_out  = width_out
         self.height_out = height_out
         self.nt = nt
-        self.sampler_size = sampler_size
+        self.sample = sample
 
         self.init_params()
 
@@ -194,7 +173,7 @@ class LowRankNet(nn.Module):
         self.sampler = GaussianSampler(self.ntargets, 
                                        self.height_out,
                                        self.width_out,
-                                       self.sampler_size)
+                                       self.sample)
 
     def forward(self, inputs):
         x, targets = inputs

@@ -28,24 +28,18 @@ class TestSeparableNet(unittest.TestCase):
         self.assertAlmostEqual(net.ygrid.min().item(), -rg)
         self.assertAlmostEqual(net.ygrid.max().item(), rg)
 
-        self.assertAlmostEqual(net.xgrid_small.min().item(), -2)
-        self.assertAlmostEqual(net.xgrid_small.max().item(), 2)
-        self.assertAlmostEqual(net.ygrid_small.min().item(), -2)
-        self.assertAlmostEqual(net.ygrid_small.max().item(), 2)
-
-
     def test_gaussian_nonsampler(self):
         nx = 17
-        net = GaussianSampler(9, nx, nx, sampler_size=0)
-        net.wx.data = torch.tensor([-(nx - 1)/nx, 0, 1, -1, 0, 1, -1, 0, 1], dtype=torch.float32)
-        net.wy.data = torch.tensor([-(nx - 1)/nx, -1, -1, 0, 0, 0, 1, 1, 1], dtype=torch.float32)
+        net = GaussianSampler(9, nx, nx, sample=False)
+        net.wx.data = torch.tensor([-(nx - 1)/nx / 2, 0, 1, -1, 0, 1, -1, 0, 1], dtype=torch.float32)
+        net.wy.data = torch.tensor([-(nx - 1)/nx / 2, -1, -1, 0, 0, 0, 1, 1, 1], dtype=torch.float32)
         net.wsigmax.data = .05 * torch.ones(9, dtype=torch.float32)
         net.wsigmay.data = .05 * torch.ones(9, dtype=torch.float32)
 
         # Create a test pattern that's one dot in the top left, 
         # one in the middle.
         X = torch.zeros(1, 9, nx, nx, dtype=torch.float32)
-        X[:, :, 0, 0] = 1
+        X[:, :, 4, 4] = 1
         X[:, :, 8, 8] = 1
 
         mask = torch.ones(9, dtype=torch.bool)
@@ -64,23 +58,23 @@ class TestSeparableNet(unittest.TestCase):
     
     def test_gaussian_sampler(self):
         nx = 17
-        net = GaussianSampler(9, nx, nx, sampler_size=9)
-        net.wx.data = torch.tensor([-(nx - 1)/nx, 0, 1, -1, 0, 1, -1, 0, 1], dtype=torch.float32)
-        net.wy.data = torch.tensor([-(nx - 1)/nx, -1, -1, 0, 0, 0, 1, 1, 1], dtype=torch.float32)
-        net.wsigmax.data = .05 * torch.ones(9, dtype=torch.float32)
-        net.wsigmay.data = .05 * torch.ones(9, dtype=torch.float32)
+        net = GaussianSampler(9, nx, nx, sample=True)
+        net.wx.data = torch.tensor([-(nx - 1)/nx / 2, 0, 1, -1, 0, 1, -1, 0, 1], dtype=torch.float32)
+        net.wy.data = torch.tensor([-(nx - 1)/nx / 2, -1, -1, 0, 0, 0, 1, 1, 1], dtype=torch.float32)
+        net.wsigmax.data = .01 * torch.ones(9, dtype=torch.float32)
+        net.wsigmay.data = .01 * torch.ones(9, dtype=torch.float32)
 
         # Create a test pattern that's one dot in the top left, 
         # one in the middle.
         X = torch.zeros(1, 9, nx, nx, dtype=torch.float32)
-        X[:, :, 0, 0] = 1
+        X[:, :, 4, 4] = 1
         X[:, :, 8, 8] = 1
 
         mask = torch.ones(9, dtype=torch.bool)
         net.eval()
         forwarded = net.forward((X, mask)).cpu().detach().numpy().squeeze()
 
-        self.assertAlmostEqual(forwarded[0], forwarded[4], places=5)
+        self.assertAlmostEqual(forwarded[0], forwarded[4], delta=.05*forwarded[0])
         self.assertGreater(forwarded[0], .1)
         self.assertLess(forwarded[1], .001)
         self.assertLess(forwarded[2], .001)
@@ -93,11 +87,11 @@ class TestSeparableNet(unittest.TestCase):
 
     def test_gaussian_sampler_train(self):
         nx = 17
-        net = GaussianSampler(9, nx, nx, sampler_size=9)
+        net = GaussianSampler(9, nx, nx, sample=True)
         net.wx.data = torch.tensor([-(nx - 1)/nx, 0, 1, -1, 0, 1, -1, 0, 1], dtype=torch.float32)
         net.wy.data = torch.tensor([-(nx - 1)/nx, -1, -1, 0, 0, 0, 1, 1, 1], dtype=torch.float32)
-        net.wsigmax.data = .05 * torch.ones(9, dtype=torch.float32)
-        net.wsigmay.data = .05 * torch.ones(9, dtype=torch.float32)
+        net.wsigmax.data = .01 * torch.ones(9, dtype=torch.float32)
+        net.wsigmay.data = .01 * torch.ones(9, dtype=torch.float32)
 
         # Create a test pattern that's one dot in the top left, 
         # one in the middle.
@@ -125,9 +119,37 @@ class TestSeparableNet(unittest.TestCase):
         self.assertLess(forwarded[7], .001)
         self.assertLess(forwarded[8], .001)
 
+    def test_clamped_edges(self):
+        """Check that edges are clamped as expected.
+        
+        In deterministic mode, the gaussian does not extend beyond borders.
+        In sampling mode, samples close to the border are clamped there.
+        """
+        nx = 17
+        X = torch.zeros(1, 1, nx, nx, dtype=torch.float32)
+        X[:, :, 0, 0] = 1
+
+        mask = torch.ones(1, dtype=torch.bool)
+        for sample in [False, True]:
+
+            net = GaussianSampler(9, nx, nx, sample=sample)
+            net.wx.data = torch.tensor([-2], dtype=torch.float32)
+            net.wy.data = torch.tensor([-2], dtype=torch.float32)
+            net.wsigmax.data = .01 * torch.ones(1, dtype=torch.float32)
+            net.wsigmay.data = .01 * torch.ones(1, dtype=torch.float32)
+
+            net.eval()
+            
+            forwarded = net.forward((X, mask)).cpu().detach().numpy().squeeze()
+            
+            if sample:
+                self.assertAlmostEqual(forwarded, 1.0)
+            else:
+                self.assertAlmostEqual(forwarded, 0.0)
+
     def test_gradient_propagates(self):
         nx = 17
-        net = GaussianSampler(9, nx, nx, sampler_size=9)
+        net = GaussianSampler(9, nx, nx, sample=True)
         net.wx.data = torch.tensor([-(nx - 1)/nx, 0, 1, -1, 0, 1, -1, 0, 1], dtype=torch.float32)
         net.wy.data = torch.tensor([-(nx - 1)/nx, -1, -1, 0, 0, 0, 1, 1, 1], dtype=torch.float32)
         net.wsigmax.data = .05 * torch.ones(9, dtype=torch.float32)
@@ -164,7 +186,7 @@ class TestSeparableNet(unittest.TestCase):
             31,
             31, 
             2,
-            sampler_size=0
+            sample=False
         )
         basenet.to(torch.device('cuda'))
         net.to(torch.device('cuda'))
@@ -190,7 +212,7 @@ class TestSeparableNet(unittest.TestCase):
             31,
             31, 
             2,
-            sampler_size=0
+            sample=False
         )
 
         net.train()
