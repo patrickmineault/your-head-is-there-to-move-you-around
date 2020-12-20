@@ -1,4 +1,5 @@
-scipy
 matplotlib
+pandas
+scipy
 tensorboard
 wandb
