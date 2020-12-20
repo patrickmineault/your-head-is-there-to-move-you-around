@@ -136,4 +136,8 @@ wandb
 models/
 runs/
 data/
+pretrained/
 
+model.pt
+fit_all.bat
+cloud-run.bat

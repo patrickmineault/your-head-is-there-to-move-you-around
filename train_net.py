@@ -225,9 +225,9 @@ def main(args):
     
     subnet = get_subnet(args)
 
-    if args.resnet_init:
-        resnet18 = models.resnet18(pretrained=True)
-        subnet.conv1.weight.data = resnet18.conv1.weight.data
+    if args.load_conv1_weights:
+        W = np.load(args.load_conv1_weights)
+        subnet.conv1.weight.data = torch.tensor(W)
         
     subnet.to(device=device)
     net = separable_net.LowRankNet(subnet, 
@@ -427,9 +427,9 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt_frequency", default=2500, type=int, help="Checkpoint frequency")
 
     parser.add_argument("--lock_rfs", default=False, help="Lock receptive field positions to start", action='store_true')
-    parser.add_argument("--resnet_init", default=False, help='Whether to initialize with a pre-trained resnet', action='store_true')
     parser.add_argument("--no_sample", default=False, help='Whether to use a normal gaussian layer rather than a sampled one', action='store_true')
     
+    parser.add_argument("--load_conv1_weights", default='', help="Load conv1 weights in .npy format")
     parser.add_argument("--load_ckpt", default='', help="Load checkpoint")
     parser.add_argument("--dataset", default='pvc4', help='Dataset (currently pvc1, pvc2 or pvc4)')
     parser.add_argument("--data_root", default='./data', help='Data path')
