@@ -265,7 +265,6 @@ def main(args):
     m, n = 0, 0
     print_frequency = 100
     tune_loss = 0.0
-    ckpt_frequency = 2500
 
     Yl = np.nan * torch.ones(100000, trainset.total_electrodes, device=device)
     Yp = np.nan * torch.ones_like(Yl)
@@ -387,7 +386,7 @@ def main(args):
 
                 n += 1
 
-                if n % ckpt_frequency == 0:
+                if n % args.ckpt_frequency == 0:
                     save_state(net, f'model.ckpt-{n:07}', output_dir)
                     
     except KeyboardInterrupt:
@@ -425,6 +424,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_blocks", default=0, type=int, help="Num Xception blocks")
     parser.add_argument("--warmup", default=5000, type=int, help="Number of iterations before unlocking tuning RFs and filters")
     parser.add_argument("--single_cell", default=-1, type=int, help="Fit data to a single cell with this index if true")
+    parser.add_argument("--ckpt_frequency", default=2500, help="Checkpoint frequency")
 
     parser.add_argument("--lock_rfs", default=False, help="Lock receptive field positions to start", action='store_true')
     parser.add_argument("--resnet_init", default=False, help='Whether to initialize with a pre-trained resnet', action='store_true')
@@ -437,4 +437,3 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     main(args)
-
