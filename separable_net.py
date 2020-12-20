@@ -136,8 +136,12 @@ class LowRankNet(nn.Module):
 
     Arguments:
         subnet: a nn.Module whose forward op takes batches of 
-                channel_in X height_in X width_in images
-        and maps them to channels_out X height_out X width_out images.
+            if threed is False:
+                channel_in X height_in X width_in images (if threed is False) and
+                maps them to channels_out X height_out X width_out images.
+            if threed is True:
+                channel_in X time_in X height_in X width_in and maps them to 
+                channels_out X time_in X height_out X width_out
         ntargets: the number of targets total
         channels_out: the number of channels coming out of subnet
         height_out: the number of vertical pixels coming out of subnet
@@ -145,6 +149,7 @@ class LowRankNet(nn.Module):
         nt: the number of weights in the convolution over time
         sample: whether to sample the Gaussian envelope or 
                 not or do it deterministically.
+        threed: whether the subnet is 3d.
     """
     def __init__(self, subnet: nn.Module, 
                        ntargets: int, 
@@ -152,7 +157,8 @@ class LowRankNet(nn.Module):
                        height_out: int, 
                        width_out: int, 
                        nt: int,
-                       sample: bool = False):
+                       sample: bool = False,
+                       threed: bool = False):
         super(LowRankNet, self).__init__()
         self.subnet = subnet
         self.ntargets = ntargets
@@ -161,6 +167,7 @@ class LowRankNet(nn.Module):
         self.height_out = height_out
         self.nt = nt
         self.sample = sample
+        self.threed = threed
 
         self.init_params()
 
@@ -186,18 +193,24 @@ class LowRankNet(nn.Module):
         assert x.ndim == 5
 
         # Start by mapping X through the sub-network.
-        # The subnet doesn't know anything about time, so move time to the front dimension of batches
-        # batch_dim x channels x time x Y x X
-        x = x.permute(0, 2, 1, 3, 4).reshape(batch_dim * nt, nchannels, ny, nx)
+        if self.threed:
+            x = self.subnet.forward(x)
+            R = torch.tensordot(x, self.wc[:, mask], dims=([1], [0]))
 
-        x = self.subnet.forward(x)
+            # Now we're at batch_dim x nt x Y x X x ntargets
+            R = R.reshape(batch_dim * nt, R.shape[2], R.shape[3], R.shape[4])
+        else:
+            # The subnet doesn't know anything about time, so move time to the front dimension of batches
+            # batch_dim x channels x time x Y x X
+            x = x.permute(0, 2, 1, 3, 4).reshape(batch_dim * nt, nchannels, ny, nx)
+            x = self.subnet.forward(x)
 
-        assert x.shape[0] == batch_dim * nt
-        assert x.shape[1] == self.channels_out
-        assert x.shape[2] == x.shape[3]
+            assert x.shape[0] == batch_dim * nt
+            assert x.shape[1] == self.channels_out
+            assert x.shape[2] == x.shape[3]
 
-        # Now we're at (batch_dim x nt) x ntargets x Y x X
-        R = torch.tensordot(x, self.wc[:, mask], dims=([1], [0]))
+            # Now we're at (batch_dim x nt) x ntargets x Y x X
+            R = torch.tensordot(x, self.wc[:, mask], dims=([1], [0]))
 
         assert R.shape[0] == batch_dim * nt
         assert R.shape[1] == R.shape[2]

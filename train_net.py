@@ -174,16 +174,23 @@ def compute_corr(Yl, Yp):
 
 
 def get_subnet(args):
+    threed = False
     if args.submodel == 'xception2d':
         subnet = xception.Xception(start_kernel_size=7, 
                                    nblocks=args.num_blocks, 
                                    nstartfeats=args.nfeats)
     elif args.submodel == 'gaborpyramid2d':
-            subnet = nn.Sequential(
-                gabor_pyramid.GaborPyramid(4),
-                transforms.Normalize(2.2, 2.2)
-            )
-    return subnet
+        subnet = nn.Sequential(
+            gabor_pyramid.GaborPyramid(4),
+            transforms.Normalize(2.2, 2.2)
+        )
+    elif args.submodel == 'gaborpyramid3d':
+        subnet = nn.Sequential(
+            gabor_pyramid.GaborPyramid3d(4),
+            transforms.Normalize(2.2, 2.2)
+        )
+        threed = True
+    return subnet, threed
 
 
 def main(args):
@@ -223,7 +230,7 @@ def main(args):
 
     print("Init models")
     
-    subnet = get_subnet(args)
+    subnet, threed = get_subnet(args)
 
     if args.load_conv1_weights:
         W = np.load(args.load_conv1_weights)
@@ -236,7 +243,8 @@ def main(args):
                                    sz, 
                                    sz, 
                                    trainset.ntau,
-                                   sample=(not args.no_sample)).to(device)
+                                   sample=(not args.no_sample), 
+                                   threed=threed).to(device)
 
 
     net.to(device=device)
@@ -417,7 +425,7 @@ if __name__ == "__main__":
     
     parser.add_argument("--exp_name", required=True, help='Friendly name of experiment')
     
-    parser.add_argument("--submodel", default='xception2d', type=str, help='Sub-model type (currently, either xception2d or gaborpyramid2d')
+    parser.add_argument("--submodel", default='xception2d', type=str, help='Sub-model type (currently, either xception2d, gaborpyramid2d, gaborpyramid3d')
     parser.add_argument("--learning_rate", default=5e-3, type=float, help='Learning rate')
     parser.add_argument("--num_epochs", default=20, type=int, help='Number of epochs to train')
     parser.add_argument("--nfeats", default=64, type=int, help='Number of features')

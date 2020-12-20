@@ -8,8 +8,10 @@ import time
 import unittest
 
 # Test out separable net
+import gabor_pyramid
 import xception
 from separable_net import LowRankNet, GaussianSampler
+
 
 class TestSeparableNet(unittest.TestCase):
     
@@ -239,6 +241,25 @@ class TestSeparableNet(unittest.TestCase):
 
         Y = net.forward((X, outputs))
         self.assertEqual(Y.shape, (8, 4, 14))
+
+    def test_threed(self):
+        """Smoke test."""
+        basenet = gabor_pyramid.GaborPyramid3d(nlevels=2)
+        X = torch.randn(8, 3, 11, 17, 17)
+        outputs = torch.tensor([[0, 1, 1, 1, 0, 1]], dtype=torch.bool)
+
+        net = LowRankNet(
+            basenet,
+            6,
+            24,
+            17,
+            17, 
+            7,
+            threed=True,
+        )
+
+        Y = net.forward((X, outputs))
+        self.assertEqual(Y.shape, (8, 4, 5))
 
 
 if __name__ == '__main__':
