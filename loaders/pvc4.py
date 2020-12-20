@@ -251,6 +251,8 @@ class PVC4(torch.utils.data.Dataset):
         if self.single_cell != -1:
             # Pick a single cell
             self.sequence = [x for x in self.sequence if x['cellnum'] == self.single_cell]
+            for s in self.sequence:
+                s['cellnum'] = 0
             self.total_electrodes = 1
 
         if self.total_electrodes == 0:

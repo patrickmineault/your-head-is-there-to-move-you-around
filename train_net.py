@@ -6,6 +6,7 @@ import argparse
 import datetime
 import itertools
 import os
+import gabor_pyramid
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
@@ -124,8 +125,17 @@ def log_net(net, layers, writer, n):
         writer.add_histogram(f'Weights/{name}/hist', 
                         param.view(-1), n)
 
-    writer.add_images('Weights/conv1d/img', 
-                      .25*net.subnet.conv1.weight + .5, n)
+    for name, param in net._parameters.items():
+        writer.add_scalar(f'Weights/{name}/mean', 
+                        param.mean(), n)
+        writer.add_scalar(f'Weights/{name}/std', 
+                        param.std(), n)
+        writer.add_histogram(f'Weights/{name}/hist', 
+                        param.view(-1), n)
+
+    if hasattr(net.subnet, 'conv1'):
+        writer.add_images('Weights/conv1d/img', 
+                        .25*net.subnet.conv1.weight + .5, n)
 
     # Plot the positions of the receptive fields
     fig = plt.figure(figsize=(6, 6))
@@ -249,7 +259,8 @@ def main(args):
             activations[name] = o
         return hook_fn
 
-    net.subnet.relu.register_forward_hook(hook('relu'))
+    if hasattr(net.subnet, 'relu'):
+        net.subnet.relu.register_forward_hook(hook('relu'))
 
     m, n = 0, 0
     print_frequency = 100
@@ -260,6 +271,7 @@ def main(args):
     Yp = np.nan * torch.ones_like(Yl)
     total_timesteps = torch.zeros(trainset.total_electrodes, device=device, dtype=torch.long)
     
+    corr = torch.ones(0)
     try:
         for epoch in range(args.num_epochs):  # loop over the dataset multiple times
             running_loss = 0.0
@@ -268,13 +280,17 @@ def main(args):
                 if n > args.warmup:
                     # Alternate between fitting the weights and fitting 
                     # the receptive field.
-                    if (n // 200) % 10 != 0:
-                        subnet.requires_grad_(True)
-                        net.sampler.requires_grad_(False)
-                    else:
-                        # Move the RFs
-                        subnet.requires_grad_(False)
-                        net.sampler.requires_grad_(True)
+                    #if (n // 200) % 10 != 0:
+                    #    optimizer.lr = args.learning_rate
+                    #    subnet.requires_grad_(True)
+                    #    net.sampler.requires_grad_(False)
+                    #else:
+                    #    # Move the RFs slowly
+                    #    optimizer.lr = args.learning_rate * 1e-1
+                    #    subnet.requires_grad_(False)
+                    #    net.sampler.requires_grad_(True)
+                    subnet.requires_grad_(True)
+                    net.sampler.requires_grad_(True)
 
                 # get the inputs; data is a list of [inputs, labels]
                 X, M, labels = data
@@ -311,15 +327,16 @@ def main(args):
                     log_net(net, layers, writer, n)
                     print('[%02d, %04d] average train loss: %.3f' % (epoch + 1, i + 1, running_loss / print_frequency ))
                     running_loss = 0
-                    #print(activations['relu'].shape)
-                    the_max = abs(activations['relu']).max()
-                    the_X_max = abs(X).max()
-                    writer.add_images('Activations/input', 
-                                      .5 * X.squeeze() / the_X_max + .5, 
-                                      n, dataformats='CNHW')
-                    writer.add_images('Activations/relu', 
-                                      .5 * activations['relu'].reshape(-1, 1, net.height_out, net.width_out) / the_max + .5, 
-                                      n, dataformats='NCHW')
+                    
+                    if 'xception' in args.submodel:
+                        the_max = abs(activations['relu']).max()
+                        the_X_max = abs(X).max()
+                        writer.add_images('Activations/input', 
+                                        .5 * X.squeeze() / the_X_max + .5, 
+                                        n, dataformats='CNHW')
+                        writer.add_images('Activations/relu', 
+                                        .5 * activations['relu'].reshape(-1, 1, net.height_out, net.width_out) / the_max + .5, 
+                                        n, dataformats='NCHW')
                 if i % 10 == 0:
                     net.eval()
                     try:
@@ -330,6 +347,7 @@ def main(args):
 
                         if n > 0:
                             corr = compute_corr(Yl, Yp)
+                            print(f'     --> mean tune corr: {corr.mean():.3f}')
                             writer.add_histogram('tune/corr', corr, n)
                             
                         Yl[:, :] = np.nan
@@ -347,13 +365,11 @@ def main(args):
                         M = M[:, mask]
 
                         nnz = torch.nonzero(mask)[0]
-                        assert labels.shape[1] == 1
-                        assert outputs.shape[1] == 1
                         
                         for k, j in enumerate(nnz):
                             slc = slice(total_timesteps[j].item(), 
                                         total_timesteps[j].item()+labels.shape[2])
-                            Yl[slc, j.item()] = labels[:, k, :]
+                            Yl[slc, j.item()] = labels[:, j, :]
                             Yp[slc, j.item()] = outputs[:, k, :]
                             total_timesteps[j.item()] += labels.shape[2]
 
@@ -384,12 +400,12 @@ def main(args):
         wandb.init(project="crcns-train_net.py", 
                 config=vars(args))
         config = wandb.config
+        corr = corr.cpu().detach().numpy()
         corr = corr[~np.isnan(corr)]
         wandb.log({"tune_corr": corr})
-        wandb.watch(model, log="all")
+        wandb.watch(net, log="all")
         torch.save(net.state_dict(), 
                    os.path.join(wandb.run.dir, 'model.pt'))
-        wandb.save(filename)
 
         print("done")
     else:
