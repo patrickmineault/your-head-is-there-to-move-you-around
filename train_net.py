@@ -424,7 +424,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_blocks", default=0, type=int, help="Num Xception blocks")
     parser.add_argument("--warmup", default=5000, type=int, help="Number of iterations before unlocking tuning RFs and filters")
     parser.add_argument("--single_cell", default=-1, type=int, help="Fit data to a single cell with this index if true")
-    parser.add_argument("--ckpt_frequency", default=2500, help="Checkpoint frequency")
+    parser.add_argument("--ckpt_frequency", default=2500, type=int, help="Checkpoint frequency")
 
     parser.add_argument("--lock_rfs", default=False, help="Lock receptive field positions to start", action='store_true')
     parser.add_argument("--resnet_init", default=False, help='Whether to initialize with a pre-trained resnet', action='store_true')
