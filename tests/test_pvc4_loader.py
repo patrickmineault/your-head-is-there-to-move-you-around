@@ -43,13 +43,16 @@ class TestPvc4Loader(unittest.TestCase):
         self.assertEqual(len({x['cellid']: 1 for x in loader.sequence}), 
                          loader.total_electrodes)
 
-        X, m, y = loader[0]
+        X, m, W, y = loader[0]
         self.assertEqual(X.shape[3], 64)
         self.assertEqual(X.shape[1], loader.nt + loader.ntau - 1)
+        self.assertEqual(m.shape, W.shape)
 
+    @unittest.skip("Slow")
     def test_tune(self):
         _ = pvc4.PVC4('../data/crcns-pvc4', nt=32, split='tune')
 
+    @unittest.skip("Slow")
     def test_report(self):
         _ = pvc4.PVC4('../data/crcns-pvc4', nt=32, split='report')
 

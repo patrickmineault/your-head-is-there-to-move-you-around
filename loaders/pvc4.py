@@ -203,6 +203,16 @@ class PVC4(torch.utils.data.Dataset):
             n = 0
             nskip = nt
 
+            # Calculate mean spikes.
+            total_spikes = 0
+            total_frames = 0
+            for i, experiment in enumerate(cell_files):
+                all_spks = np.array(experiment['spktimes'])
+                total_spikes += all_spks[all_spks > -1].sum() * experiment['nrepeats']
+                total_frames += (all_spks > -1).sum() * experiment['nrepeats']
+
+            mean_spk = total_spikes / total_frames
+
             for i, experiment in enumerate(cell_files):
                 sz = experiment['images'].shape[1]
                 if sz < largest_size:
@@ -215,6 +225,7 @@ class PVC4(torch.utils.data.Dataset):
                     experiment['images'] = X
 
                 nframes = len(experiment['spktimes'])
+                all_spks = np.array(experiment['spktimes'])
 
                 for start_time in range(self.nframestart, nframes, nskip):
                     if start_time + nskip + 1 > nframes:
@@ -238,6 +249,8 @@ class PVC4(torch.utils.data.Dataset):
                             'split': split,
                             'cellid': experiment['cellid'],
                             'cellnum': n_electrodes,
+                            'nrepeats': experiment['nrepeats'],
+                            'mean_spk': mean_spk,
                         })
 
                     n += 1
@@ -276,13 +289,17 @@ class PVC4(torch.utils.data.Dataset):
         X = (X - 40.0) / 40.0
 
         # Create a mask from the electrode range
-        m = np.zeros((self.total_electrodes), dtype=np.bool)
-        m[tgt['cellnum']] = True
+        M = np.zeros((self.total_electrodes), dtype=np.bool)
+        M[tgt['cellnum']] = True
 
         Y = np.zeros((self.total_electrodes, self.nt))
         Y[tgt['cellnum'], :] = tgt['spikes']
 
-        return (X, m, Y)
+        w = np.sqrt(tgt['nrepeats'] / max(tgt['mean_spk'], .1))
+        W = np.zeros((self.total_electrodes))
+        W[tgt['cellnum']] = w # max(w, .1)
+
+        return (X, M, W, Y)
 
     def __len__(self):
         # Returns the length of a dataset
