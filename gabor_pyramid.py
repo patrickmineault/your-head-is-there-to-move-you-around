@@ -123,4 +123,4 @@ class GaborPyramid3d(nn.Module):
                     padding=1, 
                     stride=2)
             X_ = X_.reshape(X.shape[0], 1, -1, X_.shape[-2], X_.shape[-1])
-        return torch.cat(maps, axis=1)
+        return torch.cat(maps, axis=1) # [:, :, 2:-2, :, :]
