@@ -47,7 +47,7 @@ def _clean_up(mat):
         if mat.shape == tuple():
             if np.issubdtype(mat.dtype, np.integer):
                 mat = int(mat)
-            elif np.issubdtype(mat.dtype, np.float):
+            elif np.issubdtype(mat.dtype, np.floating):
                 mat = float(mat)
             else:
                 mat = str(mat)
