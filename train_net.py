@@ -257,7 +257,17 @@ def main(args):
 
     layers = get_all_layers(net)
 
-    optimizer = optim.Adam(net.parameters(), lr=args.learning_rate)
+    if args.single_cell == -1:
+        # Make sure to scale things properly because of double counting.
+        optimizer = optim.Adam([
+            {'params': net.inner_parameters, 'lr': args.learning_rate / np.sqrt(trainset.total_electrodes)},
+            {'params': net.sampler.parameters(), 'lr': args.learning_rate / np.sqrt(trainset.total_electrodes)},
+            {'params': subnet.parameters(), 'lr': args.learning_rate},
+        ])
+    else:
+        optimizer = optim.Adam(net.parameters(), lr=args.learning_rate)
+    
+    net.requires_grad_(True)
     net.sampler.requires_grad_(False)
     subnet.requires_grad_(False)
 
@@ -285,23 +295,13 @@ def main(args):
             for i, data in enumerate(trainloader, 0):
                 net.train()
                 if n > args.warmup:
-                    # Alternate between fitting the weights and fitting 
-                    # the receptive field.
-                    #if (n // 200) % 10 != 0:
-                    #    optimizer.lr = args.learning_rate
-                    #    subnet.requires_grad_(True)
-                    #    net.sampler.requires_grad_(False)
-                    #else:
-                    #    # Move the RFs slowly
-                    #    optimizer.lr = args.learning_rate * 1e-1
-                    #    subnet.requires_grad_(False)
-                    #    net.sampler.requires_grad_(True)
+                    # Release the Kraken!
                     subnet.requires_grad_(True)
                     net.sampler.requires_grad_(True)
 
                 # get the inputs; data is a list of [inputs, labels]
-                X, M, labels = data
-                X, M, labels = X.to(device), M.to(device), labels.to(device)
+                X, M, w, labels = data
+                X, M, w, labels = X.to(device), M.to(device), w.to(device), labels.to(device)                
 
                 optimizer.zero_grad()
 
@@ -317,7 +317,7 @@ def main(args):
                     loss += constraints(net, mask)
 
                 # masked mean squared error
-                loss = ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
+                loss = w[:, mask] * ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
                 loss.backward()
                 optimizer.step()
 
@@ -356,6 +356,7 @@ def main(args):
                             corr = compute_corr(Yl, Yp)
                             print(f'     --> mean tune corr: {corr.mean():.3f}')
                             writer.add_histogram('tune/corr', corr, n)
+                            writer.add_scalar('tune/corr', corr.mean(), n)
                             
                         Yl[:, :] = np.nan
                         Yp[:, :] = np.nan
@@ -363,7 +364,7 @@ def main(args):
                     
                     # get the inputs; data is a list of [inputs, labels]
                     with torch.no_grad():
-                        X, M, labels = tune_data
+                        X, M, _, labels = tune_data
                         X, M, labels = X.to(device), M.to(device), labels.to(device)
 
                         X = transform(X)
@@ -402,22 +403,23 @@ def main(args):
 
     filename = save_state(net, f'model.ckpt-{n:07}', output_dir)
 
-    if n > 0:
-        print("Saving to weight and biases")
-        wandb.init(project="crcns-train_net.py", 
-                config=vars(args))
-        config = wandb.config
-        corr = corr.cpu().detach().numpy()
-        corr = corr[~np.isnan(corr)]
-        wandb.log({"tune_corr": corr})
-        wandb.watch(net, log="all")
-        torch.save(net.state_dict(), 
-                   os.path.join(wandb.run.dir, 'model.pt'))
-
-        print("done")
+    if args.no_wandb:
+        print("Skipping W&B per config")
     else:
-        print("Did not save result")
-    
+        if n > 10000:
+            print("Saving to weight and biases")
+            wandb.init(project="crcns-train_net.py", 
+                    config=vars(args))
+            config = wandb.config
+            corr = corr.cpu().detach().numpy()
+            corr = corr[~np.isnan(corr)]
+            wandb.log({"tune_corr": corr})
+            wandb.watch(net, log="all")
+            torch.save(net.state_dict(), 
+                    os.path.join(wandb.run.dir, 'model.pt'))
+            print("done")
+        else:
+            print("Aborted too early, did not save results")
 
 if __name__ == "__main__":
     desc = "Train a neural net"
@@ -434,8 +436,8 @@ if __name__ == "__main__":
     parser.add_argument("--single_cell", default=-1, type=int, help="Fit data to a single cell with this index if true")
     parser.add_argument("--ckpt_frequency", default=2500, type=int, help="Checkpoint frequency")
 
-    parser.add_argument("--lock_rfs", default=False, help="Lock receptive field positions to start", action='store_true')
     parser.add_argument("--no_sample", default=False, help='Whether to use a normal gaussian layer rather than a sampled one', action='store_true')
+    parser.add_argument("--no_wandb", default=False, help='Skip using W&B', action='store_true')
     
     parser.add_argument("--load_conv1_weights", default='', help="Load conv1 weights in .npy format")
     parser.add_argument("--load_ckpt", default='', help="Load checkpoint")
