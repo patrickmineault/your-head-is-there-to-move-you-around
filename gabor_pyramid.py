@@ -62,10 +62,12 @@ class GaborPyramid3d(nn.Module):
     """
     def __init__(self, 
                  nlevels=5,
-                 nt=7):
+                 nt=7,
+                 stride=1):
         super(GaborPyramid3d, self).__init__()
         self.nt = nt
         self.nlevels = nlevels
+        self.stride = stride
         self.setup()
 
     def setup(self):
@@ -103,7 +105,10 @@ class GaborPyramid3d(nn.Module):
         X_ = X.sum(axis=1, keepdims=True)
         maps = []
         for i in range(self.nlevels):
-            outputs = F.conv3d(X_, self.filters, padding=(self.nt//2, 4, 4))
+            outputs = F.conv3d(X_, 
+                               self.filters, 
+                               padding=(self.nt//2, 4, 4),
+                               stride=self.stride)
             magnitude = torch.sqrt((outputs ** 2)[:, ::2, :, :, :] + 
                                    (outputs ** 2)[:, 1::2, :, :, :])
             if i == 0:
