@@ -1,5 +1,6 @@
 matplotlib
 pandas
+python-dict-wrapper
 scipy
 tensorboard
 wandb
