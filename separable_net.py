@@ -158,8 +158,10 @@ class LowRankNet(nn.Module):
                        width_out: int, 
                        nt: int,
                        sample: bool = False,
-                       threed: bool = False):
+                       threed: bool = False,
+                       output_nl: bool = True):
         super(LowRankNet, self).__init__()
+        print("Using low-rank net")
         self.subnet = subnet
         self.ntargets = ntargets
         self.channels_out = channels_out
@@ -168,6 +170,7 @@ class LowRankNet(nn.Module):
         self.nt = nt
         self.sample = sample
         self.threed = threed
+        self.output_nl = output_nl
 
         self.init_params()
 
@@ -178,6 +181,9 @@ class LowRankNet(nn.Module):
 
         self.wt = nn.Parameter((1 + .1 * torch.randn(self.nt, self.ntargets)) / self.nt)
         self.wb = nn.Parameter(torch.randn(self.ntargets)*.05 + .6)
+
+        self.inner_parameters = [self.wc, self.wt, self.wb]
+
         self.sampler = GaussianSampler(self.ntargets, 
                                        self.height_out,
                                        self.width_out,
@@ -195,10 +201,13 @@ class LowRankNet(nn.Module):
         # Start by mapping X through the sub-network.
         if self.threed:
             x = self.subnet.forward(x)
+            assert x.shape[-1] == self.width_out
+            assert x.shape[-2] == self.height_out
             R = torch.tensordot(x, self.wc[:, mask], dims=([1], [0]))
 
             # Now we're at batch_dim x nt x Y x X x ntargets
-            R = R.reshape(batch_dim * nt, R.shape[2], R.shape[3], R.shape[4])
+            R = R.reshape(-1, R.shape[2], R.shape[3], R.shape[4])
+
         else:
             # The subnet doesn't know anything about time, so move time to the front dimension of batches
             # batch_dim x channels x time x Y x X
@@ -212,14 +221,14 @@ class LowRankNet(nn.Module):
             # Now we're at (batch_dim x nt) x ntargets x Y x X
             R = torch.tensordot(x, self.wc[:, mask], dims=([1], [0]))
 
-        assert R.shape[0] == batch_dim * nt
+        # assert R.shape[0] == batch_dim * nt
         assert R.shape[1] == R.shape[2]
         assert R.shape[3] == ntargets
 
         # Now at (batch_dim x nt) x Y x X x ntargets
         R = R.permute(0, 3, 1, 2)
 
-        assert R.shape[0] == batch_dim * nt
+        # assert R.shape[0] == batch_dim * nt
         assert R.shape[1] == ntargets
         assert R.shape[2] == R.shape[3]
 
@@ -231,7 +240,7 @@ class LowRankNet(nn.Module):
         # Finally, we're at batch_dim x outputs x nt
         # (batch_dim x nt) x ntargets
 
-        R = R.reshape(batch_dim, nt, ntargets).permute(0, 2, 1)
+        R = R.reshape(batch_dim, -1, ntargets).permute(0, 2, 1)
 
         # Now at batch_dim x ntargets x nt
         R = F.conv1d(R, 
@@ -239,7 +248,76 @@ class LowRankNet(nn.Module):
                      bias=self.wb[mask], 
                      groups=ntargets)
 
-        return F.leaky_relu(R, negative_slope=.1)
+        if self.output_nl:
+            R = F.leaky_relu(R, negative_slope=.1)
+
+        return R
 
     
-        
+class AverageNet(nn.Module):
+    """Creates a network that averages over all of space for prediction.    
+    """
+    def __init__(self, subnet: nn.Module, 
+                       ntargets: int, 
+                       channels_out: int, 
+                       height_out: int, 
+                       width_out: int, 
+                       nt: int,
+                       sample: bool = False,
+                       threed: bool = False,
+                       output_nl: bool = True):
+        print("Using average net")
+        super(AverageNet, self).__init__()
+        self.subnet = subnet
+        self.ntargets = ntargets
+        self.channels_out = channels_out
+        self.width_out  = width_out
+        self.height_out = height_out
+        self.nt = nt
+        self.sample = sample
+        self.threed = threed
+        self.output_nl = output_nl
+
+        self.init_params()
+
+    def init_params(self):
+        self.wc = nn.Parameter(
+            (.01 * torch.randn(self.channels_out * self.nt, self.ntargets)) / self.channels_out
+        )
+
+        # self.wt = nn.Parameter((1 + .1 * torch.randn(self.nt, self.ntargets)) / self.nt)
+        self.wb = nn.Parameter(torch.randn(self.ntargets)*.005)
+
+        self.inner_parameters = [self.wc, self.wb]
+
+    def forward(self, inputs):
+        x, _ = inputs
+        batch_dim, nchannels, nt, ny, nx = x.shape
+
+        assert nx == ny
+        assert x.ndim == 5
+
+        # Start by mapping X through the sub-network.
+        if self.threed:
+            x = self.subnet.forward(x)
+            # Now we're at batch_dim, nchannels_out, nt_out, ny_out, nx_out
+            x = x.mean(axis=4).mean(axis=3)
+            #R = torch.tensordot(x, self.wc[:, mask], dims=([1], [0]))
+
+            # Now we're at batch_dim x nt x ntargets
+        else:
+            raise NotImplementedError("Threed=False not done yes")
+
+        assert x.shape[0] == batch_dim
+        R = torch.matmul(
+            x.reshape(x.shape[0], -1),
+            self.wc,
+        ) + self.wb.reshape((1, -1))
+
+        R = R.reshape((R.shape[0], 1, R.shape[1]))
+        R = R.permute(0, 2, 1)
+
+        if self.output_nl:
+            R = F.leaky_relu(R, negative_slope=.1)
+
+        return R

@@ -10,7 +10,7 @@ import unittest
 # Test out separable net
 import gabor_pyramid
 import xception
-from separable_net import LowRankNet, GaussianSampler
+from separable_net import LowRankNet, GaussianSampler, AverageNet
 
 
 class TestSeparableNet(unittest.TestCase):
@@ -249,6 +249,25 @@ class TestSeparableNet(unittest.TestCase):
         outputs = torch.tensor([[0, 1, 1, 1, 0, 1]], dtype=torch.bool)
 
         net = LowRankNet(
+            basenet,
+            6,
+            24,
+            17,
+            17, 
+            7,
+            threed=True,
+        )
+
+        Y = net.forward((X, outputs))
+        self.assertEqual(Y.shape, (8, 4, 5))
+
+    def test_average_net(self):
+        """Smoke test."""
+        basenet = gabor_pyramid.GaborPyramid3d(nlevels=2)
+        X = torch.randn(8, 3, 11, 17, 17)
+        outputs = torch.tensor([[0, 1, 1, 1, 0, 1]], dtype=torch.bool)
+
+        net = AverageNet(
             basenet,
             6,
             24,
