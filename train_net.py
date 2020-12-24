@@ -1,12 +1,10 @@
-import xception
-import separable_net
+from modelzoo import xception, separable_net, gabor_pyramid
 from loaders import pvc1, pvc2, pvc4
 
 import argparse
 import datetime
 import itertools
 import os
-import gabor_pyramid
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse

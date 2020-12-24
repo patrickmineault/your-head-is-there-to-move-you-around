@@ -161,7 +161,6 @@ class LowRankNet(nn.Module):
                        threed: bool = False,
                        output_nl: bool = True):
         super(LowRankNet, self).__init__()
-        print("Using low-rank net")
         self.subnet = subnet
         self.ntargets = ntargets
         self.channels_out = channels_out
@@ -239,7 +238,6 @@ class LowRankNet(nn.Module):
 
         # Finally, we're at batch_dim x outputs x nt
         # (batch_dim x nt) x ntargets
-
         R = R.reshape(batch_dim, -1, ntargets).permute(0, 2, 1)
 
         # Now at batch_dim x ntargets x nt
@@ -250,6 +248,9 @@ class LowRankNet(nn.Module):
 
         if self.output_nl:
             R = F.leaky_relu(R, negative_slope=.1)
+
+        # Finally, we want to be at batch_dim x nt_out x noutputs
+        R = R.permute(0, 2, 1)
 
         return R
 
@@ -266,7 +267,6 @@ class AverageNet(nn.Module):
                        sample: bool = False,
                        threed: bool = False,
                        output_nl: bool = True):
-        print("Using average net")
         super(AverageNet, self).__init__()
         self.subnet = subnet
         self.ntargets = ntargets
@@ -291,8 +291,10 @@ class AverageNet(nn.Module):
         self.inner_parameters = [self.wc, self.wb]
 
     def forward(self, inputs):
-        x, _ = inputs
+        x, mask = inputs
+        assert mask.shape[1] == self.ntargets
         batch_dim, nchannels, nt, ny, nx = x.shape
+        assert mask.shape[0] == batch_dim
 
         assert nx == ny
         assert x.ndim == 5
@@ -315,7 +317,6 @@ class AverageNet(nn.Module):
         ) + self.wb.reshape((1, -1))
 
         R = R.reshape((R.shape[0], 1, R.shape[1]))
-        R = R.permute(0, 2, 1)
 
         if self.output_nl:
             R = F.leaky_relu(R, negative_slope=.1)

@@ -1,7 +1,7 @@
 import sys
 sys.path.append('../')
 
-import gabor_pyramid
+from modelzoo import gabor_pyramid
 import torch
 import unittest
 

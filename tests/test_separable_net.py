@@ -8,9 +8,8 @@ import time
 import unittest
 
 # Test out separable net
-import gabor_pyramid
-import xception
-from separable_net import LowRankNet, GaussianSampler, AverageNet
+from modelzoo import gabor_pyramid, xception
+from modelzoo.separable_net import LowRankNet, GaussianSampler, AverageNet
 
 
 class TestSeparableNet(unittest.TestCase):
@@ -240,7 +239,7 @@ class TestSeparableNet(unittest.TestCase):
         )
 
         Y = net.forward((X, outputs))
-        self.assertEqual(Y.shape, (8, 4, 14))
+        self.assertEqual(Y.shape, (8, 14, 4))
 
     def test_threed(self):
         """Smoke test."""
@@ -259,13 +258,13 @@ class TestSeparableNet(unittest.TestCase):
         )
 
         Y = net.forward((X, outputs))
-        self.assertEqual(Y.shape, (8, 4, 5))
+        self.assertEqual(Y.shape, (8, 5, 4))
 
     def test_average_net(self):
         """Smoke test."""
         basenet = gabor_pyramid.GaborPyramid3d(nlevels=2)
-        X = torch.randn(8, 3, 11, 17, 17)
-        outputs = torch.tensor([[0, 1, 1, 1, 0, 1]], dtype=torch.bool)
+        X = torch.randn(8, 3, 2, 17, 17)
+        outputs = torch.ones(8, 6, dtype=torch.bool)
 
         net = AverageNet(
             basenet,
@@ -273,12 +272,12 @@ class TestSeparableNet(unittest.TestCase):
             24,
             17,
             17, 
-            7,
+            2,
             threed=True,
         )
 
         Y = net.forward((X, outputs))
-        self.assertEqual(Y.shape, (8, 4, 5))
+        self.assertEqual(Y.shape, (8, 1, 6))
 
 
 if __name__ == '__main__':

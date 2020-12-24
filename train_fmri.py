@@ -7,8 +7,7 @@ import numpy as np
 import os
 
 from loaders import vim2
-import gabor_pyramid
-import separable_net
+from modelzoo import gabor_pyramid, separable_net
 
 import torch
 from torch import nn
@@ -271,7 +270,6 @@ def main(args):
                                device=device, 
                                dtype=torch.bool)
                 outputs = net((fit_layer, M))
-                outputs = outputs.permute(0, 2, 1)
 
                 #print(outputs.shape)
                 #print(labels.shape)
@@ -330,7 +328,6 @@ def main(args):
 
                         M = torch.ones(fit_layer.shape[0], trainset.total_electrodes, device=device, dtype=torch.bool)
                         outputs = net((fit_layer, M))
-                        outputs = outputs.permute(0, 2, 1)
                         assert tuple(outputs.shape) == tuple(labels.shape)
                         
                         slc = slice(total_timesteps, 
