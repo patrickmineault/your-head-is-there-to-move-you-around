@@ -141,3 +141,7 @@ pretrained/
 model.pt
 fit_all.bat
 cloud-run.bat
+
+# Data files
+*.h5
+*.pkl
