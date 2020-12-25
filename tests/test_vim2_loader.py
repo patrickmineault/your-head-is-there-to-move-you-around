@@ -9,23 +9,25 @@ import unittest
 import torch
 from pprint import pprint
 
+data_root = '../data/crcns-vim2/derived/'
+
 class TestVim2Loader(unittest.TestCase):
     def test_sequence(self):
-        loader = vim2.Vim2('../data/crcns-vim2/', 
+        loader = vim2.Vim2(data_root, 
                            nx=112, 
                            ny=112,
                            split='train')
         self.assertGreater(len(loader.sequence), 0)
         self.assertTrue(np.all([np.all(x['stim_idx'] >= -1) for x in loader.sequence]))
 
-        loader = vim2.Vim2('../data/crcns-vim2/', 
+        loader = vim2.Vim2(data_root, 
                            nx=112, 
                            ny=112,
                            split='tune')
         self.assertGreater(len(loader.sequence), 0)
         self.assertTrue(np.all([np.all(x['stim_idx'] >= -1) for x in loader.sequence]))
 
-        loader = vim2.Vim2('../data/crcns-vim2/', 
+        loader = vim2.Vim2(data_root, 
                            nx=112, 
                            ny=112,
                            split='report')
@@ -33,7 +35,7 @@ class TestVim2Loader(unittest.TestCase):
         self.assertTrue(np.all([np.all(x['stim_idx'] >= -1) for x in loader.sequence]))
 
     def test_rois(self):
-        loader = vim2.Vim2('../data/crcns-vim2/', 
+        loader = vim2.Vim2(data_root, 
                            nx=112, 
                            ny=112,
                            split='train')
@@ -43,7 +45,7 @@ class TestVim2Loader(unittest.TestCase):
 
     def test_train(self):
         for split in ('train', 'tune', 'report'):
-            loader = vim2.Vim2('../data/crcns-vim2/', 
+            loader = vim2.Vim2(data_root, 
                             nt=9,
                             ntau=3,
                             nx=112, 
@@ -71,7 +73,7 @@ class TestVim2Loader(unittest.TestCase):
         self.assertGreater(loader.total_electrodes, 0)
 
     def test_valid(self):
-        loader = vim2.Vim2('../data/crcns-vim2/', 
+        loader = vim2.Vim2(data_root, 
                         nt=9,
                         ntau=4,
                         nx=112, 

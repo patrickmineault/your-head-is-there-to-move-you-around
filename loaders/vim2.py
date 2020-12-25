@@ -62,6 +62,8 @@ class Vim2(torch.utils.data.Dataset):
         self.nframedelay = nframedelay
         self.subject = subject
         self.split = split
+        self.framerate = 15
+        self.sampling_freq = 16
 
         if 540 % nt != 0:
             raise NotImplementedError("nt must divide 540")
@@ -83,7 +85,7 @@ class Vim2(torch.utils.data.Dataset):
                     'split': split,
                     'stim_idx': np.fmin(
                                     np.fmax(
-                                        np.arange((i + nframedelay - ntau + 1) * framerate, 
+                                        np.arange((i + nframedelay + 1) * framerate - ntau, 
                                                   (i + nframedelay + nt) * framerate), 
                                     -1), 
                                 framerate * seq_end - 1),
@@ -157,15 +159,6 @@ class Vim2(torch.utils.data.Dataset):
                     (stim.shape[-1] - self.nx) // 2 + self.nx)
         rgy = slice((stim.shape[-1] - self.ny) // 2,
                     (stim.shape[-1] - self.ny) // 2 + self.ny)
-
-        """
-        if tgt['split'] == 'report':
-            assert stim.shape[0] == 8100
-            assert resp.shape[0] == 540
-        else:
-            assert stim.shape[0] == self.total_reponses * framerate
-            assert resp.shape[0] == self.total_reponses
-        """
 
         assert tgt['split'] == self.split
 

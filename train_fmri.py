@@ -6,8 +6,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
+from fmri_models import get_feature_model, get_readout_model, get_dataset
 from loaders import vim2
 from modelzoo import gabor_pyramid, separable_net
+from training import compute_corr, get_all_layers, save_state
 
 import torch
 from torch import nn
@@ -15,90 +17,6 @@ import torchvision
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
-
-def get_all_layers(net, prefix=[]):
-    if hasattr(net, '_modules'):
-        lst = []
-        for name, layer in net._modules.items():
-            full_name = '_'.join((prefix + [name]))
-            lst = lst + [(full_name, layer)] + get_all_layers(layer, prefix + [name])
-        return lst
-    else:
-        return []
-
-def save_state(net, title, output_dir):
-    datestr = str(datetime.datetime.now()).replace(':', '-')
-    filename = os.path.join(output_dir, f'{title}-{datestr}.pt')
-    torch.save(net.state_dict(), filename)
-    return filename
-
-def get_feature_model(args):
-    activations = collections.OrderedDict()
-    def hook(name):
-        def hook_fn(m, i, o):
-            activations[name] = o
-        return hook_fn
-
-    if args.features == 'gaborpyramid3d':
-        model = gabor_pyramid.GaborPyramid3d(nlevels=5, stride=(15, 1, 1))
-        model.register_forward_hook(hook('layer1'))
-        sz = 112
-        threed = True
-    else:
-        raise NotImplementedError('Model not implemented yet')
-
-    return model, activations, sz, threed
-
-
-def get_readout_model(args, threed, trainset):
-    if args.readout == 'gaussian':
-        subnet = Downsampler(max_size=32)
-        net = separable_net.LowRankNet(subnet, 
-                                    trainset.total_electrodes, 
-                                    args.nfeats, 
-                                    32, 
-                                    32, 
-                                    trainset.ntau - 1,
-                                    sample=(not args.no_sample), 
-                                    threed=threed,
-                                    output_nl=False)
-    elif args.readout == 'average':
-        subnet = Passthrough()
-        net = separable_net.AverageNet(subnet, 
-                                    trainset.total_electrodes, 
-                                    args.nfeats, 
-                                    32, 
-                                    32, 
-                                    trainset.ntau - 1,
-                                    sample=(not args.no_sample), 
-                                    threed=threed,
-                                    output_nl=False)
-    else:
-        raise NotImplementedError(f"{args.readout} readout not implemented")
-    return net, subnet
-
-
-class Passthrough(nn.Module):
-    def __init__(self):
-        super(Passthrough, self).__init__()
-
-    def forward(self, data):
-        return (data - 5) / 5
-
-
-class Downsampler(nn.Module):
-    def __init__(self, max_size):
-        super(Downsampler, self).__init__()
-        self.max_size = max_size
-
-    def forward(self, data):
-        if data.shape[-1] > self.max_size:
-            data = F.interpolate(data, 
-                                (data.shape[2], self.max_size, self.max_size), 
-                                mode='trilinear',
-                                align_corners=True)
-        return (data - 5) / 5
-
 
 def log_net(net, layers, writer, n):
     for name, layer in layers:
@@ -158,17 +76,6 @@ def log_net(net, layers, writer, n):
         writer.add_figure('abs_wt', fig, n)
 
 
-def compute_corr(Yl, Yp):
-    corr = torch.zeros(Yl.shape[1], device=Yl.device)
-    for i in range(Yl.shape[1]):
-        yl, yp = (Yl[:, i].cpu().detach().numpy(), 
-                  Yp[:, i].cpu().detach().numpy())
-        yl = yl[~np.isnan(yl)]
-        yp = yp[~np.isnan(yp)]
-        corr[i] = np.corrcoef(yl, yp)[0, 1]
-    return corr
-
-
 def main(args):
     print("Main")
     output_dir = os.path.join(args.output_dir, args.exp_name)
@@ -190,25 +97,7 @@ def main(args):
     if device == 'cpu':
         print("No CUDA! Sad!")
 
-    nframedelay = -3
-    trainset = vim2.Vim2(os.path.join(args.data_root, 'crcns-vim2'), 
-                                split='train', 
-                                nt=1, 
-                                nx=112,
-                                ny=112,
-                                ntau=5, 
-                                nframedelay=nframedelay,
-                                subset=args.subset)
-
-    tuneset = vim2.Vim2(os.path.join(args.data_root, 'crcns-vim2'), 
-                            split='report', 
-                            nt=1,
-                            nx=112,
-                            ny=112,
-                            ntau=5,
-                            nframedelay=nframedelay,
-                            subset=args.subset)
-
+    trainset, tuneset = get_dataset('train'), get_dataset('tune')
     feature_model, activations, sz, threed = get_feature_model(args)
 
     trainloader = torch.utils.data.DataLoader(trainset, 
@@ -371,20 +260,14 @@ if __name__ == "__main__":
     parser.add_argument("--target_layer", default='layer1', type=str, help='Which layer to use as features')
     parser.add_argument("--learning_rate", default=5e-3, type=float, help='Learning rate')
     parser.add_argument("--num_epochs", default=20, type=int, help='Number of epochs to train')
-    parser.add_argument("--nfeats", default=64, type=int, help='Number of features')
-    parser.add_argument("--num_blocks", default=0, type=int, help="Num Xception blocks")
-    parser.add_argument("--warmup", default=5000, type=int, help="Number of iterations before unlocking tuning RFs and filters")
-    parser.add_argument("--single_cell", default=-1, type=int, help="Fit data to a single cell with this index if true")
     parser.add_argument("--ckpt_frequency", default=2500, type=int, help="Checkpoint frequency")
-    parser.add_argument("--batch_size", default=4, type=int, help="Back size")
+    parser.add_argument("--batch_size", default=4, type=int, help="Batch size")
 
     parser.add_argument("--no_sample", default=False, help='Whether to use a normal gaussian layer rather than a sampled one', action='store_true')
     parser.add_argument("--no_wandb", default=False, help='Skip using W&B', action='store_true')
-    parser.add_argument("--subset", default=False, help='Use a subset of the data', action='store_true')
+    parser.add_argument("--subset", default=False, help='Use a subset of the data (useful in debugging)', action='store_true')
     
-    parser.add_argument("--load_conv1_weights", default='', help="Load conv1 weights in .npy format")
-    parser.add_argument("--load_ckpt", default='', help="Load checkpoint")
-    parser.add_argument("--dataset", default='pvc4', help='Dataset (currently pvc1, pvc2 or pvc4)')
+    parser.add_argument("--dataset", default='vim2', help='Dataset (currently vim2 only)')
     parser.add_argument("--data_root", default='./data', help='Data path')
     parser.add_argument("--output_dir", default='./models', help='Output path for models')
     
