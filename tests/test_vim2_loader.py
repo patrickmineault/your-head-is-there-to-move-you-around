@@ -9,35 +9,27 @@ import unittest
 import torch
 from pprint import pprint
 
-data_root = '../data/crcns-vim2/derived/'
+data_root = '../data/crcns-vim2/derived'
 
 class TestVim2Loader(unittest.TestCase):
     def test_sequence(self):
         loader = vim2.Vim2(data_root, 
-                           nx=112, 
-                           ny=112,
                            split='train')
         self.assertGreater(len(loader.sequence), 0)
         self.assertTrue(np.all([np.all(x['stim_idx'] >= -1) for x in loader.sequence]))
 
         loader = vim2.Vim2(data_root, 
-                           nx=112, 
-                           ny=112,
                            split='tune')
         self.assertGreater(len(loader.sequence), 0)
         self.assertTrue(np.all([np.all(x['stim_idx'] >= -1) for x in loader.sequence]))
 
         loader = vim2.Vim2(data_root, 
-                           nx=112, 
-                           ny=112,
                            split='report')
         self.assertGreater(len(loader.sequence), 0)
         self.assertTrue(np.all([np.all(x['stim_idx'] >= -1) for x in loader.sequence]))
 
     def test_rois(self):
         loader = vim2.Vim2(data_root, 
-                           nx=112, 
-                           ny=112,
                            split='train')
         rois = loader._get_rois()
         self.assertGreater(len(rois), 0)
@@ -46,19 +38,16 @@ class TestVim2Loader(unittest.TestCase):
     def test_train(self):
         for split in ('train', 'tune', 'report'):
             loader = vim2.Vim2(data_root, 
-                            nt=9,
-                            ntau=3,
-                            nx=112, 
-                            ny=112,
+                            nt=1,
+                            ntau=16,
                             split=split)
-
             X, Y = loader[0]
 
             self.assertFalse(np.isnan(Y).any())
-            self.assertEqual(X.shape[-1], 112)
-            self.assertEqual(X.shape[-2], 112)
+            self.assertEqual(X.shape[-1], 128)
+            self.assertEqual(X.shape[-2], 128)
             self.assertEqual(X.shape[0], 3)
-            self.assertEqual(X.shape[1], (loader.nt + loader.ntau - 1) * 15)
+            self.assertEqual(X.shape[1], (loader.nt - 1) * 15 + loader.ntau)
 
             self.assertEqual(Y.shape[0], loader.nt)
             self.assertEqual(Y.shape[1], loader.total_electrodes)
@@ -76,12 +65,31 @@ class TestVim2Loader(unittest.TestCase):
         loader = vim2.Vim2(data_root, 
                         nt=9,
                         ntau=4,
-                        nx=112, 
-                        ny=112,
                         split='train')
 
         for _, Y in loader:
             self.assertEqual(np.isnan(Y).sum(), 0)
+
+    def test_subject(self):
+        for s in ['s1', 's2', 's3']:
+            loader = vim2.Vim2(data_root, 
+                            nt=9,
+                            ntau=4,
+                            split='report',
+                            subject=s)
+            X, Y = loader[-1]
+            self.assertGreater(Y.size, 0)
+            self.assertFalse(np.isnan(Y).any(), s)
+
+            loader = vim2.Vim2(data_root, 
+                            nt=9,
+                            ntau=4,
+                            split='traintune',
+                            subject=s)
+            X, Y = loader[-1]
+            self.assertGreater(Y.size, 0)
+            self.assertFalse(np.isnan(Y).any(), s)
+
 
 if __name__ == '__main__':
     unittest.main()
