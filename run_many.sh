@@ -1,15 +1,20 @@
 #!/bin/bash
 
-for i in {0..24}
-do
-    python train_net.py --exp_name "_pvc4_pyramid_cell_${i}" \
-        --single_cell "$i" \
-        --learning_rate 3e-3 \
-        --num_epochs 200 \
-        --nfeats 16 \
-        --warmup 1000 \
-        --submodel gaborpyramid2d \
-        --data_root /storage/crcns/ \
-        --output_dir /storage/models/pvc4-pyramid \
-        --ckpt_frequency 50000
+models=(gaborpyramid3d r3d_18 mc3_18 r2plus1d_18 vgg19 r3d_18 r3d_18)
+max_layer=(4 16 16 16 15 16 16)
+width=(112 112 112 112 112 56 28)
+for subject in s1 s2 s3;
+    do
+    for i in "${!models[@]}";
+    do
+        for layer in $(seq 0 1 "${max_layer[$i]}");
+        do
+            python train_fmri_convex.py \
+                --exp_name 20201226 \
+                --layer "$layer" \
+                --features "${models[$i]}" \
+                --subject "$subject" \
+                --width "${width[$i]}"
+        done
+    done
 done
