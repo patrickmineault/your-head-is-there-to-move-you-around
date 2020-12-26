@@ -5,11 +5,12 @@ import os
 from modelzoo import gabor_pyramid, separable_net
 from loaders import vim2
 
+import torch
 from torch import nn
 import torch.nn.functional as F
 
 from torchvision.models.vgg import vgg19
-from torchvision.models.video import r3d_18
+from torchvision.models.video import r3d_18, mc3_18, r2plus1d_18
 
 class Passthrough(nn.Module):
     def __init__(self):
@@ -38,11 +39,50 @@ class Averager(nn.Module):
         super(Averager, self).__init__()
 
     def forward(self, X):
-        assert X.shape[2] in (10, 20, 40, 80)
-        stride = X.shape[2] // 5  # Always use at most 4 time points
-        delta = (X.shape[2] - 3 * stride) // 2
-        slc = slice(delta, delta + stride * 3, stride)
-        return X[:, :, slc, :, :].mean(4).mean(3).reshape(X.shape[0], -1)
+        nt = 4
+        assert X.shape[2] in (10, 20, 40, 80), "X.shape[2] must be 10 x a power of 2"
+        stride = X.shape[2] // (nt + 1)  # Always use at most 4 time points
+        delta = (X.shape[2] - (nt - 1) * stride) // 2
+        slc = slice(delta, delta + stride * (nt - 1))
+        return X[:, :, slc, :, :].mean(4).mean(3).reshape(
+            X.shape[0], 
+            X.shape[1], 
+            nt, -1).mean(3).reshape(X.shape[0], -1)
+
+
+def downsample(movie, width):
+    data = F.interpolate(movie, 
+                        (movie.shape[2], width, width), 
+                        mode='trilinear',
+                        align_corners=False)
+    return movie
+
+def preprocess_data(loader, model, aggregator, activations, metadata, args):
+    Xs = []
+    Ys = []
+    for X, Y in loader:
+        X, Y = X.to(device='cuda'), Y.to(device='cuda')
+
+        with torch.no_grad():
+            X = downsample(X, args.width)
+            if metadata['threed']:
+                result = model(X)
+                fit_layer = activations[args.layer]
+            else:
+                result = model(X.permute(0, 2, 1, 3, 4).reshape(-1, 
+                                                                X.shape[1], 
+                                                                X.shape[3], 
+                                                                X.shape[4]))
+                fit_layer = activations[args.layer]
+                fit_layer = fit_layer.reshape(X.shape[0], X.shape[2], *fit_layer.shape[1:])
+                fit_layer = fit_layer.permute(0, 2, 1, 3, 4)
+
+            stim = aggregator(fit_layer)
+            Xs.append(stim)
+            Ys.append(Y.squeeze())
+
+    return torch.cat(Xs, axis=0), torch.cat(Ys, axis=0)
+
 
 def get_aggregator(metadata, args):
     if args.aggregator == 'average':
@@ -51,18 +91,16 @@ def get_aggregator(metadata, args):
         max_size = int(np.sqrt(args.max_size / metadata['sz']))
         return Downsampler(max_size)
 
+
 def get_dataset(args, fold):
     if args.dataset == 'vim2':
         nframedelay = -3
-        data = vim2.Vim2(os.path.join(args.data_root, 'crcns-vim2'), 
+        data = vim2.Vim2(os.path.join(args.data_root, 'crcns-vim2/derived'), 
                                     split=fold, 
                                     nt=1, 
-                                    nx=112,
-                                    ny=112,
                                     ntau=80, 
                                     nframedelay=nframedelay,
-                                    subject=args.subject,
-                                    subset=args.subset)
+                                    subject=args.subject)
     else:
         raise NotImplementedError("Only vim2 implemented")
 
@@ -77,12 +115,18 @@ def get_feature_model(args):
         return hook_fn
 
     if args.features == 'gaborpyramid3d':
-        model = gabor_pyramid.GaborPyramid3d(nlevels=5, stride=(1, 1, 1))
-        model.register_forward_hook(hook(0))
+        model = gabor_pyramid.GaborPyramid3d(nlevels=args.layer+1, stride=(1, 1, 1))
+        model.register_forward_hook(hook(args.layer))
         metadata = {'sz': 112,
                     'threed': True}  # The pyramid itself deals with the stride.
-    elif args.features == 'r3d_18':
-        model = r3d_18(pretrained=True)
+    elif args.features in ('r3d_18', 'mc3_18', 'r2plus1d_18'):
+        if args.features == 'r3d_18':
+            model = r3d_18(pretrained=True)
+        elif args.features == 'mc3_18':
+            model = mc3_18(pretrained=True)
+        elif args.features == 'r2plus1d_18':
+            model = r2plus1d_18(pretrained=True)
+
         layers = (
             model.stem[2],
             model.layer1[0].conv1[2],
@@ -102,12 +146,14 @@ def get_feature_model(args):
             model.layer4[1].conv1[2],
             model.layer4[1].relu,
         )
+
         for i, layer in enumerate(layers):
+            assert layer.__repr__().startswith('ReLU')
             if i == args.layer:
                 layer.register_forward_hook(hook(i))
         
         metadata = {'sz': 112,
-                    'threed': True}  # The pyramid itself deals with the stride.
+                    'threed': True}
     elif args.features == 'vgg19':
         model = vgg19(pretrained=True)
         layers = [layer for layer in model.features if 
