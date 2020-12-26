@@ -2,45 +2,24 @@ import argparse
 import numpy as np
 import pickle
 import os
+import time
 import wandb
 
 from training import compute_corr
 from fmri_models import (get_dataset, 
                          get_feature_model, 
                          get_readout_model,
-                         get_aggregator)
+                         get_aggregator,
+                         preprocess_data)
 
 import torch
 
 ff = .1
 
-def preprocess_data(loader, model, aggregator, activations, metadata, args):
-    Xs = []
-    Ys = []
-    for X, Y in loader:
-        X, Y = X.to(device='cuda'), Y.to(device='cuda')
-
-        with torch.no_grad():
-            if metadata['threed']:
-                result = model(X)
-                fit_layer = activations[args.layer]
-            else:
-                result = model(X.permute(0, 2, 1, 3, 4).reshape(-1, 
-                                                                X.shape[1], 
-                                                                X.shape[3], 
-                                                                X.shape[4]))
-                fit_layer = activations[args.layer]
-                fit_layer = fit_layer.reshape(X.shape[0], X.shape[2], *fit_layer.shape[1:])
-                fit_layer = fit_layer.permute(0, 2, 1, 3, 4)
-
-            stim = aggregator(fit_layer)
-            Xs.append(stim)
-            Ys.append(Y.squeeze())
-
-    return torch.cat(Xs, axis=0), torch.cat(Ys, axis=0)
-
-
 def main(args):
+    print("Fitting model")
+    print(args)
+    t0 = time.time()
     device = 'cuda'
 
     trainset = get_dataset(args, 'traintune')
@@ -127,6 +106,7 @@ def main(args):
     var_after = ((Y_report - Y_preds) ** 2).mean(0)
     r2_report = 1 - var_after / var_baseline
 
+
     corrs_report = compute_corr(Y_report, Y_preds)
 
     weights = {
@@ -139,9 +119,12 @@ def main(args):
         'r2_cvs': r2_cvs.cpu().detach().numpy(),
         'r2_report': r2_report.cpu().detach().numpy(),
         'corrs_report': corrs_report.cpu().detach().numpy(),
+        'corrs_report_mean': corrs_report.cpu().detach().numpy().mean(),
+        'corrs_report_median': np.median(corrs_report.cpu().detach().numpy()),
         'w_shape': w.shape,
         'feature_mean': m.squeeze().cpu().detach().numpy(),
         'feature_std': s.squeeze().cpu().detach().numpy(),
+        'fit_time': time.time() - t0,
     }
 
     if not args.no_wandb:
@@ -174,6 +157,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=desc)
     
     parser.add_argument("--exp_name", required=True, help='Friendly name of experiment')
+    parser.add_argument("--width", default=112, type=int, help='Width the video will be resized to')
     parser.add_argument("--features", default='gaborpyramid3d', type=str, help='What kind of features to use')
     parser.add_argument("--layer", default=0, type=int, help='Which layer to use as features')
     parser.add_argument("--aggregator", default='average', type=str, help='What kind of aggregator to use')
@@ -181,7 +165,6 @@ if __name__ == "__main__":
 
     parser.add_argument("--no_sample", default=False, help='Whether to use a normal gaussian layer rather than a sampled one', action='store_true')
     parser.add_argument("--no_wandb", default=False, help='Skip using W&B', action='store_true')
-    parser.add_argument("--subset", default=False, help='Use a subset of the data for debugging', action='store_true')
     
     parser.add_argument("--dataset", default='vim2', help='Dataset (currently only vim2)')
     parser.add_argument("--subject", default='s1', help='Dataset (for vim2: s1, s2 or s3)')
