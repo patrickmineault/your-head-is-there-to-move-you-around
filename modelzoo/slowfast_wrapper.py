@@ -11,9 +11,9 @@ kinetics_root = 'https://dl.fbaipublicfiles.com/pyslowfast/model_zoo/kinetics400
 x3d_root = 'https://dl.fbaipublicfiles.com/pyslowfast/x3d_models/'
 
 paths = {'I3D': ('Kinetics/c2/I3D_8x8_R50.yaml', kinetics_root + 'I3D_8x8_R50.pkl'),
-         'Slow': ('Kinetics/c2/SLOW_8x8_R50.yaml', kinetics_root + 'SLOW_8x8_R50.pkl'),
+         'Slow': ('Kinetics/c2/SLOW_8x8_R50.yaml', kinetics_root + 'SLOWONLY_8x8_R50.pkl'),
          'SlowFast': ('Kinetics/c2/SLOWFAST_8x8_R50.yaml', kinetics_root + 'SLOWFAST_8x8_R50.pkl'),
-         'X3DL': ('Kinetics/X3D_L.yaml', x3d_root + 'x3d_l.pyth')}
+         'X3DM': ('Kinetics/X3D_M.yaml', x3d_root + 'x3d_m.pyth')}
 
 class SlowFast(nn.Module):
     def __init__(self, args):
@@ -27,7 +27,7 @@ class SlowFast(nn.Module):
             os.path.join(args.slowfast_path, 'configs', yaml)
         )
         cfg.NUM_GPUS = 1
-        cfg.DATA.NUM_FRAMES = 64
+        cfg.DATA.NUM_FRAMES = 80
         model = build_model(cfg)
 
         # Now load the weights.
@@ -46,6 +46,7 @@ class SlowFast(nn.Module):
             convert_from_caffe2='c2' in yaml,
         )
         self.model = model
+        self.features = args.features
 
     def _download(self, url, local_path):
         response = requests.get(url, stream=True)
@@ -59,8 +60,9 @@ class SlowFast(nn.Module):
         progress_bar.close()
 
     def forward(self, X):
-        slc = slice(2, X.shape[2] - 1, 4)
-        inputs = [X[:, :, slc, :, :], X]
-        print(inputs[0].shape)
-        print(inputs[1].shape)
+        if self.features == 'SlowFast':
+            slc = slice(2, X.shape[2] - 1, 4)
+            inputs = [X[:, :, slc, :, :], X]
+        else:
+            inputs = [X]
         return self.model(inputs)

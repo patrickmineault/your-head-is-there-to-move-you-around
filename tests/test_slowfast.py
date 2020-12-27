@@ -20,9 +20,22 @@ class TestSlowFast(unittest.TestCase):
                          'slowfast_path': '../../slowfast/',
                          'ckpt_root': '../pretrained'})
             model = slowfast_wrapper.SlowFast(args)
-            X = torch.randn(1, 3, 64, 224, 224, device='cuda')
+            X = torch.randn(1, 3, 80, 224, 224, device='cuda')
             X_forwarded = model.forward(X)
             self.assertEqual(X_forwarded.shape[0], 1)
+
+    @unittest.skip("Broken")
+    def test_X3DM(self):
+        """Smoke tests"""
+        for features in ['X3DM']:
+            args = wrap({'features': features,
+                         'slowfast_path': '../../slowfast/',
+                         'ckpt_root': '../pretrained'})
+            model = slowfast_wrapper.SlowFast(args)
+            X = torch.randn(1, 3, 80, 224, 224, device='cuda')
+            X_forwarded = model.forward(X)
+            self.assertEqual(X_forwarded.shape[0], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

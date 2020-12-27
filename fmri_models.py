@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from modelzoo import gabor_pyramid, separable_net
 from loaders import vim2
+from modelzoo.slowfast_wrapper import SlowFast
 
 import torch
 from torch import nn
@@ -59,7 +60,7 @@ def downsample(movie, width):
                         (movie.shape[2], width, width), 
                         mode='trilinear',
                         align_corners=False)
-    return movie
+    return data
 
 def preprocess_data(loader, 
                     model, 
@@ -209,8 +210,7 @@ def get_feature_model(args):
                   layer.__repr__().startswith('ReLU')]
 
         for i, layer in enumerate(layers):
-            if i == args.layer:
-                layer.register_forward_hook(hook(i))
+            layer.register_forward_hook(hook(i))
 
         metadata = {'sz': 112,
                     'threed': False}
@@ -238,11 +238,56 @@ def get_feature_model(args):
         )
 
         for i, layer in enumerate(layers):
-            if i == args.layer:
-                layer.register_forward_hook(hook(i))
+            layer.register_forward_hook(hook(i))
 
         metadata = {'sz': 112,
                     'threed': False}
+    elif args.features in ('SlowFast', 'Slow', 'I3D'):
+        model = SlowFast(args)
+
+        if args.features == 'SlowFast':
+            layers = (
+                model.model.s1.pathway0_stem,
+                model.model.s1.pathway1_stem,
+                model.model.s1_fuse,
+                model.model.s2.pathway0_res2,
+                model.model.s2.pathway1_res2,
+                model.model.s2_fuse,
+                model.model.s3.pathway0_res3,
+                model.model.s3.pathway1_res3,
+                model.model.s3_fuse,
+                model.model.s4.pathway0_res5,
+                model.model.s4.pathway1_res5,
+                model.model.s4_fuse,
+                model.model.s5.pathway0_res2,
+                model.model.s5.pathway1_res2,
+            )
+        else:
+            layers = (
+                model.model.s1.pathway0_stem,
+                model.model.s2.pathway0_res0,
+                model.model.s2.pathway0_res1,
+                model.model.s2.pathway0_res2,
+                model.model.s3.pathway0_res0,
+                model.model.s3.pathway0_res1,
+                model.model.s3.pathway0_res2,
+                model.model.s3.pathway0_res3,
+                model.model.s4.pathway0_res0,
+                model.model.s4.pathway0_res1,
+                model.model.s4.pathway0_res2,
+                model.model.s4.pathway0_res3,
+                model.model.s4.pathway0_res4,
+                model.model.s4.pathway0_res5,
+                model.model.s5.pathway0_res0,
+                model.model.s5.pathway0_res1,
+                model.model.s5.pathway0_res2,
+            )
+
+        for i, layer in enumerate(layers):
+            layer.register_forward_hook(hook(i))
+
+        metadata = {'sz': 112,
+                    'threed': True}
     else:
         raise NotImplementedError('Model not implemented yet')
 
