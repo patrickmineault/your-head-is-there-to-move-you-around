@@ -22,6 +22,16 @@ def main(args):
     t0 = time.time()
     device = 'cuda'
 
+    try:
+        os.makedirs(args.ckpt_root)
+    except FileExistsError:
+        pass
+
+    try:
+        os.makedirs(args.cache_root)
+    except FileExistsError:
+        pass
+
     trainset = get_dataset(args, 'traintune')
     reportset = get_dataset(args, 'report')
 
@@ -169,7 +179,9 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", default='vim2', help='Dataset (currently only vim2)')
     parser.add_argument("--subject", default='s1', help='Dataset (for vim2: s1, s2 or s3)')
     parser.add_argument("--data_root", default='./data', help='Data path')
-    parser.add_argument("--output_dir", default='./models', help='Output path for models')
+    parser.add_argument("--cache_root", default='./cache', help='Precomputed cache path')
+    parser.add_argument("--slowfast_root", default='', help='Path where SlowFast is installed')
+    parser.add_argument("--ckpt_root", default='./pretrained', help='Path where trained model checkpoints will be downloaded')
     
     args = parser.parse_args()
     main(args)
