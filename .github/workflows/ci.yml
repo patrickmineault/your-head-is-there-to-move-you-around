@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytorch
+          pip install torch
           pip install -r requirements.txt
       - name: Run tests with pytest
         run: nosetests --with-coverage --cover-package=tests
