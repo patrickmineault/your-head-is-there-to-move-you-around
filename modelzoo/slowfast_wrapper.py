@@ -24,7 +24,7 @@ class SlowFast(nn.Module):
 
         cfg = get_cfg()
         cfg.merge_from_file(
-            os.path.join(args.slowfast_path, 'configs', yaml)
+            os.path.join(args.slowfast_root, 'configs', yaml)
         )
         cfg.NUM_GPUS = 1
         cfg.DATA.NUM_FRAMES = 80

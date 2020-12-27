@@ -17,7 +17,7 @@ class TestSlowFast(unittest.TestCase):
         """Smoke tests"""
         for features in ['I3D', 'Slow', 'SlowFast']:
             args = wrap({'features': features,
-                         'slowfast_path': '../../slowfast/',
+                         'slowfast_root': '../../slowfast/',
                          'ckpt_root': '../pretrained'})
             model = slowfast_wrapper.SlowFast(args)
             X = torch.randn(1, 3, 80, 224, 224, device='cuda')
@@ -29,7 +29,7 @@ class TestSlowFast(unittest.TestCase):
         """Smoke tests"""
         for features in ['X3DM']:
             args = wrap({'features': features,
-                         'slowfast_path': '../../slowfast/',
+                         'slowfast_root': '../../slowfast/',
                          'ckpt_root': '../pretrained'})
             model = slowfast_wrapper.SlowFast(args)
             X = torch.randn(1, 3, 80, 224, 224, device='cuda')
