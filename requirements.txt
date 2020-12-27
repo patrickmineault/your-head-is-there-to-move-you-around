@@ -1,3 +1,5 @@
+av
+gluoncv
 matplotlib
 pandas
 python-dict-wrapper
@@ -5,3 +7,4 @@ scipy
 tables
 tensorboard
 wandb
+git+https://github.com/facebookresearch/detectron2.git
