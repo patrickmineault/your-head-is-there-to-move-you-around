@@ -8,7 +8,6 @@ import wandb
 from training import compute_corr
 from fmri_models import (get_dataset, 
                          get_feature_model, 
-                         get_readout_model,
                          get_aggregator,
                          preprocess_data)
 
@@ -149,12 +148,16 @@ def main(args):
         wandb.run.summary.update(results)
 
         # Also save the best weights.
-        out_path = os.path.join(wandb.run.dir, 'optimal_weights.pkl')
-        with open(out_path, 'wb') as f:
-            pickle.dump(weights, f)
+        if not args.no_save:
+            weight_path = os.path.join(wandb.run.dir, 'optimal_weights.pkl')
+            with open(weight_path, 'wb') as f:
+                pickle.dump(weights, f)
+        
+            # These weights are big, only save if necessary
+            wandb.save(weight_path)
 
-        wandb.save(out_path)
-
+            results['weight_path'] = weight_path
+            
         out_path = os.path.join(wandb.run.dir, 'results.pkl')
         with open(out_path, 'wb') as f:
             pickle.dump(results, f)
@@ -171,10 +174,12 @@ if __name__ == "__main__":
     parser.add_argument("--features", default='gaborpyramid3d', type=str, help='What kind of features to use')
     parser.add_argument("--layer", default=0, type=int, help='Which layer to use as features')
     parser.add_argument("--aggregator", default='average', type=str, help='What kind of aggregator to use')
+    parser.add_argument("--aggregator_sz", default=8, type=int, help='The size the aggregator will be used with')
     parser.add_argument("--batch_size", default=4, type=int, help='Batch size')
 
     parser.add_argument("--no_sample", default=False, help='Whether to use a normal gaussian layer rather than a sampled one', action='store_true')
     parser.add_argument("--no_wandb", default=False, help='Skip using W&B', action='store_true')
+    parser.add_argument("--no_save", default=False, help='Skip saving weights', action='store_true')
     
     parser.add_argument("--dataset", default='vim2', help='Dataset (currently only vim2)')
     parser.add_argument("--subject", default='s1', help='Dataset (for vim2: s1, s2 or s3)')
