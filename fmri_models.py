@@ -5,8 +5,9 @@ import os
 import tables
 from tqdm import tqdm
 
-from modelzoo import gabor_pyramid, separable_net
 from loaders import vim2
+from modelzoo import gabor_pyramid, separable_net
+from modelzoo.motionnet import MotionNet
 from modelzoo.slowfast_wrapper import SlowFast
 
 import torch
@@ -25,18 +26,52 @@ class Passthrough(nn.Module):
         return data
 
 
-class Downsampler(nn.Module):
-    def __init__(self, max_size):
-        super(Downsampler, self).__init__()
-        self.max_size = max_size
+def downsample_3d(X, sz):
+    """
+    Spatially downsamples a stack of square videos.
+    
+    Args:
+        X: a stack of images (batch, channels, nt, ny, ny).
+        sz: the desired size of the videos.
+        
+    Returns:
+        The downsampled videos, a tensor of shape (batch, channel, nt, sz, sz)
+    """
+    kernel = torch.tensor([[.25, .5, .25], 
+                           [.5, 1, .5], 
+                           [.25, .5, .25]], device=X.device).reshape(1, 1, 1, 3, 3)
+    kernel = kernel.repeat((X.shape[1], 1, 1, 1, 1))
+    while sz < X.shape[-1] / 2:
+        # Downsample by a factor 2 with smoothing
+        mask = torch.ones(1, *X.shape[1:], device=X.device)
+        mask = F.conv3d(mask, kernel, groups=X.shape[1], stride=(1, 2, 2), padding=(0, 1, 1))
+        X = F.conv3d(X, kernel, groups=X.shape[1], stride=(1, 2, 2), padding=(0, 1, 1))
+        
+        # Normalize the edges and corners.
+        X = X = X / mask
+    
+    return F.interpolate(X, size=(X.shape[2], sz, sz), mode='trilinear', align_corners=True)
 
-    def forward(self, data):
-        if data.shape[-1] > self.max_size:
-            data = F.interpolate(data, 
-                                (data.shape[2], self.max_size, self.max_size), 
-                                mode='trilinear',
-                                align_corners=True)
-        return data
+class Downsampler(nn.Module):
+    def __init__(self, sz):
+        super(Downsampler, self).__init__()
+        self.sz = sz
+
+    def forward(self, X):
+        nt = 4
+        assert X.shape[2] in (10, 20, 40, 80), "X.shape[2] must be 10 x a power of 2"
+        big_pixel = X.shape[-1] // self.sz
+        
+        stride = X.shape[2] // (nt + 1)  # Always use at most 4 time points
+        delta = (X.shape[2] - nt * stride) // 2
+        slc = slice(delta, delta + stride * nt)
+        X = X[:, :, slc, :, :].reshape(
+            X.shape[0], X.shape[1], nt, stride, X.shape[-2], X.shape[-1]
+        ).mean(3)
+        X = downsample_3d(X, self.sz)
+        assert X.shape[-1] == self.sz
+        assert X.shape[2] == nt
+        return X.reshape(X.shape[0], -1)
 
 
 class Averager(nn.Module):
@@ -55,7 +90,7 @@ class Averager(nn.Module):
             nt, -1).mean(3).reshape(X.shape[0], -1)
 
 
-def downsample(movie, width):
+def resize(movie, width):
     data = F.interpolate(movie, 
                         (movie.shape[2], width, width), 
                         mode='trilinear',
@@ -89,7 +124,7 @@ def preprocess_data(loader,
             X, Y = X.to(device='cuda'), Y.to(device='cuda')
 
             with torch.no_grad():
-                X = downsample(X, args.width)
+                X = resize(X, args.width)
                 if metadata['threed']:
                     result = model(X)
                     
@@ -139,8 +174,7 @@ def get_aggregator(metadata, args):
     if args.aggregator == 'average':
         return Averager()
     elif args.aggregator == 'downsample':
-        max_size = int(np.sqrt(args.max_size / metadata['sz']))
-        return Downsampler(max_size)
+        return Downsampler(args.aggregator_sz)
 
 
 def get_dataset(args, fold):
@@ -242,28 +276,12 @@ def get_feature_model(args):
 
         metadata = {'sz': 112,
                     'threed': False}
-    elif args.features in ('SlowFast', 'Slow', 'I3D'):
+    elif args.features in ('SlowFast_Slow', 'SlowFast_Fast', 'Slow', 'I3D'):
         model = SlowFast(args)
 
-        if args.features == 'SlowFast':
+        if args.features == 'SlowFast_Fast':
             layers = (
-                model.model.s1.pathway0_stem,
-                model.model.s2.pathway0_res0,
-                model.model.s2.pathway0_res1,
-                model.model.s2.pathway0_res2,
-                model.model.s3.pathway0_res0,
-                model.model.s3.pathway0_res1,
-                model.model.s3.pathway0_res2,
-                model.model.s3.pathway0_res3,
-                model.model.s4.pathway0_res0,
-                model.model.s4.pathway0_res1,
-                model.model.s4.pathway0_res2,
-                model.model.s4.pathway0_res3,
-                model.model.s4.pathway0_res4,
-                model.model.s4.pathway0_res5,
-                model.model.s5.pathway0_res0,
-                model.model.s5.pathway0_res1,
-                model.model.s5.pathway0_res2,
+                model.model.s1.pathway1_stem.relu,
                 model.model.s1.pathway1_stem,
                 model.model.s2.pathway1_res0,
                 model.model.s2.pathway1_res1,
@@ -284,6 +302,7 @@ def get_feature_model(args):
             )
         else:
             layers = (
+                model.model.s1.pathway0_stem.relu,
                 model.model.s1.pathway0_stem,
                 model.model.s2.pathway0_res0,
                 model.model.s2.pathway0_res1,
@@ -303,41 +322,27 @@ def get_feature_model(args):
                 model.model.s5.pathway0_res2,
             )
 
+
         for i, layer in enumerate(layers):
             layer.register_forward_hook(hook(i))
 
         metadata = {'sz': 112,
                     'threed': True}
+    elif args.features in ('MotionNet'):
+        model = MotionNet(args)
+        layers = (
+            model.relu,
+            model.softmax
+        )
+
+        for i, layer in enumerate(layers):
+            layer.register_forward_hook(hook(i))
+
+        metadata = {'sz': 112,
+                    'threed': True}
+
     else:
         raise NotImplementedError('Model not implemented yet')
 
     model.eval()
     return model, activations, metadata
-
-
-def get_readout_model(args, threed, trainset):
-    if args.readout == 'gaussian':
-        subnet = Downsampler(max_size=32)
-        net = separable_net.LowRankNet(subnet, 
-                                    trainset.total_electrodes, 
-                                    args.nfeats, 
-                                    32, 
-                                    32, 
-                                    trainset.ntau - 1,
-                                    sample=(not args.no_sample), 
-                                    threed=threed,
-                                    output_nl=False)
-    elif args.readout == 'average':
-        subnet = Passthrough()
-        net = separable_net.AverageNet(subnet, 
-                                    trainset.total_electrodes, 
-                                    args.nfeats, 
-                                    32, 
-                                    32, 
-                                    trainset.ntau - 1,
-                                    sample=(not args.no_sample), 
-                                    threed=threed,
-                                    output_nl=False)
-    else:
-        raise NotImplementedError(f"{args.readout} readout not implemented")
-    return net, subnet
