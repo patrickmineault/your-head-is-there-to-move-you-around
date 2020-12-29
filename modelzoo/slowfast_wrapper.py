@@ -3,6 +3,8 @@ import requests
 from torch import nn
 from tqdm import tqdm
 
+from .util import download
+
 from slowfast.models.build import build_model
 from slowfast.config.defaults import get_cfg
 from slowfast.utils.checkpoint import load_checkpoint
@@ -13,6 +15,8 @@ x3d_root = 'https://dl.fbaipublicfiles.com/pyslowfast/x3d_models/'
 paths = {'I3D': ('Kinetics/c2/I3D_8x8_R50.yaml', kinetics_root + 'I3D_8x8_R50.pkl'),
          'Slow': ('Kinetics/c2/SLOW_8x8_R50.yaml', kinetics_root + 'SLOWONLY_8x8_R50.pkl'),
          'SlowFast': ('Kinetics/c2/SLOWFAST_8x8_R50.yaml', kinetics_root + 'SLOWFAST_8x8_R50.pkl'),
+         'SlowFast_Fast': ('Kinetics/c2/SLOWFAST_8x8_R50.yaml', kinetics_root + 'SLOWFAST_8x8_R50.pkl'),
+         'SlowFast_Slow': ('Kinetics/c2/SLOWFAST_8x8_R50.yaml', kinetics_root + 'SLOWFAST_8x8_R50.pkl'),
          'X3DM': ('Kinetics/X3D_M.yaml', x3d_root + 'x3d_m.pyth')}
 
 class SlowFast(nn.Module):
@@ -35,7 +39,7 @@ class SlowFast(nn.Module):
         local_path = os.path.join(args.ckpt_root, ckpt)
         if not os.path.exists(
             os.path.join(args.ckpt_root, ckpt)):
-            self._download(remote, local_path)
+            download(remote, local_path)
 
         load_checkpoint(
             local_path,
@@ -47,17 +51,6 @@ class SlowFast(nn.Module):
         )
         self.model = model
         self.features = args.features
-
-    def _download(self, url, local_path):
-        response = requests.get(url, stream=True)
-        total_size_in_bytes= int(response.headers.get('content-length', 0))
-        block_size = 2 ** 16 #1 Kibibyte
-        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
-        with open(local_path, 'wb') as file:
-            for data in response.iter_content(block_size):
-                progress_bar.update(len(data))
-                file.write(data)
-        progress_bar.close()
 
     def forward(self, X):
         if self.features == 'SlowFast':
