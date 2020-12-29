@@ -7,8 +7,7 @@ from python_dict_wrapper import wrap
 from fmri_models import (get_dataset, 
                          preprocess_data, 
                          get_feature_model,
-                         get_aggregator,
-                         downsample)
+                         get_aggregator)
 from modelzoo import slowfast_wrapper
 
 import torch
