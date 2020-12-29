@@ -145,3 +145,6 @@ cloud-run.bat
 # Data files
 *.h5
 *.pkl
+
+notebooks/results
+wandb-metadata.json
