@@ -14,12 +14,5 @@ Then, run a particular pipeline in the cloud
 ```
 python train_net.py --exp_name _pvc4_pyramid_cell_00 --single_cell 00 --learning_rate 3e-3 --num_epochs 400 --nfeats 8 --warmup 1000
 
-gradient experiments run singlenode \
-  --name xception2d \
-  --projectId XXX \
-  --experimentEnv "{\"GCS_ROOT\":\"https://storage.googleapis.com/example/\"}" \
-  --container patrickmineault/torch-batteries:latest \
-  --machineType K80 \
-  --command "python train_net.py --exp_name _pvc4_pyramid_cell_00 --single_cell 00 --learning_rate 3e-3 --num_epochs 400 --nfeats 8 --warmup 1000 --data_root /content/crcns/" \
-  --workspace https://github.com/patrickmineault/brain-scorer.git
+
 ```
