@@ -13,7 +13,8 @@ from fmri_models import (get_dataset,
                          get_feature_model,
                          get_aggregator,
                          Averager,
-                         Downsampler)
+                         Downsampler,
+                         RP)
 
 import torch
 
@@ -41,7 +42,27 @@ class TestFmriModels(unittest.TestCase):
             self.assertEqual(X_.shape[1], 24*8*8)
             self.assertEqual(X_.ndim, 2)
 
-    @unittest.skip("Slow")
+    def test_rp(self):
+        rp = RP(100)
+        for sz in [10, 20, 40, 80]:
+            X = torch.randn(1, 6, sz, 20, 20)
+            X_ = rp(X)
+            self.assertEqual(X_.shape[1], 100)
+            self.assertEqual(X_.ndim, 2)
+
+        # Now check a different size
+        X = torch.randn(1, 128, 80, 20, 20)
+        X_ = rp(X)
+        self.assertEqual(X_.shape[1], 100)
+
+    def test_rp_cuda(self):
+        rp = RP(100)
+
+        # Now check a different size
+        X = torch.randn(1, 128, 80, 20, 20, device='cuda')
+        X_ = rp(X)
+        self.assertEqual(X_.shape[1], 100)
+
     def test_caching(self):
         with tempfile.TemporaryDirectory() as tmpdirname:
             args = wrap({'subject': 's1',
@@ -95,7 +116,6 @@ class TestFmriModels(unittest.TestCase):
             # Should be at least five times faster
             self.assertGreater(dt, dt2 * 5)
 
-    @unittest.skip("Slow")
     def test_caching_2d(self):
         with tempfile.TemporaryDirectory() as tmpdirname:
             args = wrap({'subject': 's1',

@@ -9,7 +9,8 @@ from training import compute_corr
 from fmri_models import (get_dataset, 
                          get_feature_model, 
                          get_aggregator,
-                         preprocess_data)
+                         preprocess_data,
+                         get_projection_matrix)
 
 import torch
 
@@ -62,6 +63,15 @@ def main(args):
 
     X = (X - m) / s
 
+    if args.pca > -1:
+        V = get_projection_matrix(X, n=args.pca)
+        X = torch.matmul(X, V)
+
+    Y = Y.to(device='cuda')
+    X = X.to(device='cuda')
+
+    print(X.std(axis=0)[:10])
+
     # Use k-fold cross-validation
     kfold = 5
     lambdas = np.array([1, 10, 100, 1000, 10000, 100000])
@@ -96,12 +106,19 @@ def main(args):
 
     X_report = (X_report - m) / s
 
+    if args.pca > -1:
+        X_report = torch.matmul(X_report, V)
+
+    X_report = X_report.to(device='cuda')
+    Y_report = Y_report.to(device='cuda')
+    
     best_lambda_vals = np.unique(best_lambdas)
 
     Y_preds = torch.zeros(Y_report.shape, device='cuda')
 
     best_W = np.zeros((X.shape[1], Y_report.shape[1]))
     Y = Y.to(device='cuda')
+
     for lambda_ in best_lambda_vals:
         H = X.T.matmul(X) + lambda_ * torch.eye(X.shape[1], device='cuda')
         w = torch.inverse(H).matmul(X.T.matmul(Y))
@@ -176,6 +193,7 @@ if __name__ == "__main__":
     parser.add_argument("--aggregator", default='average', type=str, help='What kind of aggregator to use')
     parser.add_argument("--aggregator_sz", default=8, type=int, help='The size the aggregator will be used with')
     parser.add_argument("--batch_size", default=4, type=int, help='Batch size')
+    parser.add_argument("--pca", default=-1, type=int, help='Size of PCA before model fit (if applicable)')
 
     parser.add_argument("--no_sample", default=False, help='Whether to use a normal gaussian layer rather than a sampled one', action='store_true')
     parser.add_argument("--no_wandb", default=False, help='Skip using W&B', action='store_true')
