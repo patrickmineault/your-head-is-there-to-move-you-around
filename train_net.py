@@ -1,4 +1,4 @@
-from modelzoo import xception, separable_net, gabor_pyramid
+from modelzoo import xception, separable_net, gabor_pyramid, monkeynet
 from loaders import pvc1, pvc2, pvc4
 
 import argparse
@@ -87,7 +87,7 @@ def get_dataset(args):
                                 single_cell=args.single_cell)
 
         transform = lambda x: x
-        sz = 30
+        sz = 65
     return trainset, tuneset, transform, sz
 
 
@@ -132,8 +132,15 @@ def log_net(net, layers, writer, n):
                         param.view(-1), n)
 
     if hasattr(net.subnet, 'conv1'):
-        writer.add_images('Weights/conv1d/img', 
-                        .25*net.subnet.conv1.weight + .5, n)
+        # NCHW
+        if net.subnet.conv1.weight.ndim == 4:
+            writer.add_images('Weights/conv1d/img', 
+                            .25*net.subnet.conv1.weight + .5, n)
+        else:
+            # NTCHW
+            writer.add_video('Weights/conv1d/img', 
+                            .1*net.subnet.conv1.weight.permute(0, 2, 1, 3, 4) + .5, 
+                            n)
 
     # Plot the positions of the receptive fields
     fig = plt.figure(figsize=(6, 6))
@@ -171,24 +178,32 @@ def compute_corr(Yl, Yp):
     return corr
 
 
-def get_subnet(args):
+def get_subnet(args, start_size):
     threed = False
     if args.submodel == 'xception2d':
         subnet = xception.Xception(start_kernel_size=7, 
                                    nblocks=args.num_blocks, 
                                    nstartfeats=args.nfeats)
+        sz = start_size // 2
+    if args.submodel == 'shallownet':
+        subnet = monkeynet.ShallowNet(nstartfeats=args.nfeats,
+                                      symmetric=True)
+        threed = True
+        sz = ((start_size + 1) // 2 + 1) // 2
     elif args.submodel == 'gaborpyramid2d':
         subnet = nn.Sequential(
             gabor_pyramid.GaborPyramid(4),
             transforms.Normalize(2.2, 2.2)
         )
+        sz = start_size // 2
     elif args.submodel == 'gaborpyramid3d':
         subnet = nn.Sequential(
             gabor_pyramid.GaborPyramid3d(4),
             transforms.Normalize(2.2, 2.2)
         )
         threed = True
-    return subnet, threed
+        sz = start_size // 2
+    return subnet, threed, sz
 
 
 def main(args):
@@ -213,7 +228,7 @@ def main(args):
     if device == 'cpu':
         print("No CUDA! Sad!")
 
-    trainset, tuneset, transform, sz = get_dataset(args)
+    trainset, tuneset, transform, start_sz = get_dataset(args)
     trainloader = torch.utils.data.DataLoader(trainset, 
                                               batch_size=1, 
                                               shuffle=True,
@@ -228,7 +243,7 @@ def main(args):
 
     print("Init models")
     
-    subnet, threed = get_subnet(args)
+    subnet, threed, sz = get_subnet(args, start_sz)
 
     if args.load_conv1_weights:
         W = np.load(args.load_conv1_weights)
@@ -306,6 +321,7 @@ def main(args):
                 # zero the parameter gradients
                 X = transform(X)
                 outputs = net((X, M))
+                outputs = outputs.permute(0, 2, 1)
 
                 mask = torch.any(M, dim=0)
                 M = M[:, mask]
@@ -367,6 +383,7 @@ def main(args):
 
                         X = transform(X)
                         outputs = net((X, M))
+                        outputs = outputs.permute(0, 2, 1)
                         mask = torch.any(M, dim=0)
                         M = M[:, mask]
 
