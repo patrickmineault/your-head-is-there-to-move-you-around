@@ -2,6 +2,9 @@ import collections
 import git
 import numpy as np
 import os
+import sklearn
+import sklearn.decomposition
+import sklearn.random_projection
 import tables
 from tqdm import tqdm
 
@@ -9,6 +12,7 @@ from loaders import vim2
 from modelzoo import gabor_pyramid, separable_net
 from modelzoo.motionnet import MotionNet
 from modelzoo.slowfast_wrapper import SlowFast
+from modelzoo.shiftnet import ShiftNet
 
 import torch
 from torch import nn
@@ -73,6 +77,60 @@ class Downsampler(nn.Module):
         assert X.shape[2] == nt
         return X.reshape(X.shape[0], -1)
 
+class RP(nn.Module):
+    def __init__(self, ncomp, sparse=True):
+        super().__init__()
+        self.downsampler = Downsampler(8)
+        self.ncomp = ncomp
+        self.Ps = {}
+        self.sparse = sparse
+
+    def forward(self, X):
+        X = self.downsampler(X)
+        P = self._get_projection_matrix(X.shape[1], device=X.device)
+        if self.sparse:
+            # Note: Currently, PyTorch does not support matrix multiplication 
+            # with the layout signature M[strided] @ M[sparse_coo]
+            result = torch.matmul(P, X.T).T
+        else:
+            result = torch.matmul(X, P)
+
+        return result
+
+    def _get_projection_matrix(self, nfeatures, device):
+        if nfeatures not in self.Ps:
+            if self.sparse:
+                rp = sklearn.random_projection.SparseRandomProjection(
+                    self.ncomp, 
+                    density = .05,
+                    random_state=0xdeadbeef)
+
+                mat = rp._make_random_matrix(self.ncomp, nfeatures)
+                coo = mat.tocoo()
+
+                values = coo.data
+                indices = np.vstack((coo.row, coo.col))
+
+                i = torch.LongTensor(indices)
+                v = torch.FloatTensor(values)
+                shape = coo.shape
+
+                i = torch.LongTensor(indices)
+                v = torch.FloatTensor(values)
+                shape = coo.shape
+
+                self.Ps[nfeatures] = torch.sparse_coo_tensor(i, v, torch.Size(shape), device=device)
+            else:
+                rp = sklearn.random_projection.GaussianRandomProjection(
+                    self.ncomp, 
+                    random_state=0xdeadbeef)
+
+                mat = rp._make_random_matrix(self.ncomp, nfeatures)
+                self.Ps[nfeatures] = torch.tensor(mat.T, dtype=torch.float, device=device)
+
+            
+        return self.Ps[nfeatures]
+
 
 class Averager(nn.Module):
     def __init__(self):
@@ -89,6 +147,11 @@ class Averager(nn.Module):
             X.shape[1], 
             nt, -1).mean(3).reshape(X.shape[0], -1)
 
+def get_projection_matrix(X, n):
+    X_ = X.cpu().detach().numpy()
+    svd = sklearn.decomposition.TruncatedSVD(n_components=n, random_state=0xadded)
+    r = svd.fit_transform(X_)
+    return torch.tensor(svd.components_.T / r[:, 0].std(), device=X.device)
 
 def resize(movie, width):
     data = F.interpolate(movie, 
@@ -144,8 +207,8 @@ def preprocess_data(loader,
                     for layer in activations.keys():
                         fit_layer = activations[layer]
                         fit_layer = fit_layer.reshape(X.shape[0], X.shape[2], *fit_layer.shape[1:])
-                        fit_layer = fit_layer.permute(0, 2, 1, 3, 4).cpu().detach().numpy()
-                        fit_layer = aggregator(fit_layer)
+                        fit_layer = fit_layer.permute(0, 2, 1, 3, 4)
+                        fit_layer = aggregator(fit_layer).cpu().detach().numpy()
 
                         if outputs is None:
                             layers[layer] = h5file.create_earray('/', f'layer{layer}', obj=fit_layer, expectedrows=nrows)
@@ -164,8 +227,8 @@ def preprocess_data(loader,
         h5file.close()
     
     h5file = tables.open_file(cache_file, mode="r")
-    X = torch.tensor(h5file.get_node(f'/layer{args.layer}')[:], device='cuda')
-    Y = torch.tensor(h5file.get_node(f'/outputs')[:], device='cuda').squeeze()
+    X = torch.tensor(h5file.get_node(f'/layer{args.layer}')[:], device='cpu')
+    Y = torch.tensor(h5file.get_node(f'/outputs')[:], device='cpu').squeeze()
     h5file.close()
     return X, Y
 
@@ -175,6 +238,10 @@ def get_aggregator(metadata, args):
         return Averager()
     elif args.aggregator == 'downsample':
         return Downsampler(args.aggregator_sz)
+    elif args.aggregator == 'rp':
+        return RP(args.aggregator_sz, sparse=True)
+    else:
+        raise NotImplementedError(f"Aggregator {args.aggregator} not implemented.")
 
 
 def get_dataset(args, fold):
@@ -328,6 +395,14 @@ def get_feature_model(args):
 
         metadata = {'sz': 112,
                     'threed': True}
+    elif args.features in ('ShiftNet'):
+        model = ShiftNet(args)
+
+        for i, layer in enumerate(model.layers):
+            layer.register_forward_hook(hook(i))
+
+        metadata = {'sz': 112,
+                    'threed': True}
     elif args.features in ('MotionNet'):
         model = MotionNet(args)
         layers = (
@@ -340,7 +415,6 @@ def get_feature_model(args):
 
         metadata = {'sz': 112,
                     'threed': True}
-
     else:
         raise NotImplementedError('Model not implemented yet')
 
