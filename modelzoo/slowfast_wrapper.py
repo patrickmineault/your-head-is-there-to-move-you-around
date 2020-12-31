@@ -53,7 +53,7 @@ class SlowFast(nn.Module):
         self.features = args.features
 
     def forward(self, X):
-        if self.features == 'SlowFast':
+        if self.features.startswith('SlowFast'):
             slc = slice(2, X.shape[2] - 1, 4)
             inputs = [X[:, :, slc, :, :], X]
         else:
