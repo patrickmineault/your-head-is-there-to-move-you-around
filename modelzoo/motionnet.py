@@ -6,7 +6,6 @@ from tqdm import tqdm
 import torch
 from torch import nn
 
-remote = "https://www.repository.cam.ac.uk/bitstream/handle/1810/300898/data_and_code.zip?sequence=1&isAllowed=y"
 
 class MotionNet(nn.Module):
     """An PyTorch implementation of Rideaux & Welchman (2020).
@@ -24,9 +23,8 @@ class MotionNet(nn.Module):
 
         # Now load the model.
         ckpt = 'motionnet.pkl'
+        # TODO: automatically download the file if it doesn't exist.
         local_path = os.path.join(args.ckpt_root, ckpt)
-        #if not os.path.exists(os.path.join(args.ckpt_root, ckpt)):
-        #    util.download(remote, local_path)
 
         with open(local_path, 'rb') as f:
             results = pickle.load(f)
@@ -42,7 +40,7 @@ class MotionNet(nn.Module):
             results['wconv'].transpose((3, 2, 1, 0))
         ).unsqueeze(1)
 
-        self.conv1.weight.bias = torch.tensor(results['bconv'])
+        self.conv1.bias.data = torch.tensor(results['bconv'])
 
         self.relu = nn.ReLU()
         self.conv2 = nn.Conv3d(128,

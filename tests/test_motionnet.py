@@ -12,7 +12,7 @@ from modelzoo import motionnet
 
 import torch
 
-class TestSlowFast(unittest.TestCase):
+class TestMotionNet(unittest.TestCase):
     def test_forward(self):
         """Smoke test"""
         args = wrap({'features': 'MotionNet',
