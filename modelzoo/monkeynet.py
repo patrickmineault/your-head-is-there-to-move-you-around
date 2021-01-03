@@ -72,6 +72,8 @@ class ShallowNet(nn.Module):
 
         self.dropout = nn.Dropout3d(.1)
 
+        self.layers = [self.relu, self.pool_layer]
+
     def forward(self, x):
         x = self.conv1(x)
         x = self.bn1(x)

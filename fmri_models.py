@@ -13,6 +13,7 @@ from modelzoo import gabor_pyramid, separable_net
 from modelzoo.motionnet import MotionNet
 from modelzoo.slowfast_wrapper import SlowFast
 from modelzoo.shiftnet import ShiftNet
+from modelzoo.monkeynet import ShallowNet
 
 import torch
 from torch import nn
@@ -268,7 +269,7 @@ def get_feature_model(args):
 
     if args.features == 'gaborpyramid3d':
         model = gabor_pyramid.GaborPyramid3d(nlevels=args.layer+1, stride=(1, 1, 1))
-        model.register_forward_hook(hook(args.layer))
+        layers = [model]
         metadata = {'sz': 112,
                     'threed': True}  # The pyramid itself deals with the stride.
     elif args.features in ('r3d_18', 'mc3_18', 'r2plus1d_18'):
@@ -299,19 +300,12 @@ def get_feature_model(args):
             model.layer4[1].relu,
         )
 
-        for i, layer in enumerate(layers):
-            assert layer.__repr__().startswith('ReLU')
-            layer.register_forward_hook(hook(i))
-        
         metadata = {'sz': 112,
                     'threed': True}
     elif args.features in ('vgg19'):
         model = vgg19(pretrained=True)
         layers = [layer for layer in model.features if 
                   layer.__repr__().startswith('ReLU')]
-
-        for i, layer in enumerate(layers):
-            layer.register_forward_hook(hook(i))
 
         metadata = {'sz': 112,
                     'threed': False}
@@ -337,9 +331,6 @@ def get_feature_model(args):
             model.layer4[1].relu,
             model.layer4[1],
         )
-
-        for i, layer in enumerate(layers):
-            layer.register_forward_hook(hook(i))
 
         metadata = {'sz': 112,
                     'threed': False}
@@ -389,17 +380,11 @@ def get_feature_model(args):
                 model.model.s5.pathway0_res2,
             )
 
-
-        for i, layer in enumerate(layers):
-            layer.register_forward_hook(hook(i))
-
         metadata = {'sz': 112,
                     'threed': True}
     elif args.features in ('ShiftNet'):
         model = ShiftNet(args)
-
-        for i, layer in enumerate(model.layers):
-            layer.register_forward_hook(hook(i))
+        layers = model.layers
 
         metadata = {'sz': 112,
                     'threed': True}
@@ -410,13 +395,37 @@ def get_feature_model(args):
             model.softmax
         )
 
-        for i, layer in enumerate(layers):
-            layer.register_forward_hook(hook(i))
+        metadata = {'sz': 112,
+                    'threed': True}
+    elif args.features == 'ShallowMonkeyNet':
+        # Load peach-wildflower-102
+        # https://wandb.ai/pmin/crcns-train_net.py/runs/2l21idn1/overview?workspace=user-pmin
+        path = os.path.join(args.ckpt_root, 'shallownet_symmetric_model.ckpt-1040000-2020-12-31 03-29-51.517721.pt')
+        checkpoint = torch.load(path)
+
+        subnet_dict = extract_subnet_dict(checkpoint)
+
+        model = ShallowNet(nstartfeats=subnet_dict['bn1.weight'].shape[0],
+                           symmetric=subnet_dict['bn1.weight'].shape[0] > subnet_dict['conv1.weight'].shape[0])
+        model.load_state_dict(subnet_dict)
+        layers = model.layers
 
         metadata = {'sz': 112,
                     'threed': True}
     else:
         raise NotImplementedError('Model not implemented yet')
 
+    for i, layer in enumerate(layers):
+        layer.register_forward_hook(hook(i))
+
+    # Put model in eval mode (for batch_norm, dropout, etc.)
     model.eval()
     return model, activations, metadata
+
+def extract_subnet_dict(d):
+    out = {}
+    for k, v in d.items():
+        if k.startswith('subnet.'):
+            out[k[7:]] = v
+
+    return out
