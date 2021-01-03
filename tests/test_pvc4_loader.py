@@ -47,6 +47,8 @@ class TestPvc4Loader(unittest.TestCase):
         self.assertEqual(X.shape[3], 64)
         self.assertEqual(X.shape[1], loader.nt + loader.ntau - 1)
         self.assertEqual(m.shape, W.shape)
+        self.assertEqual(y.ndim, 2)
+        self.assertEqual(y.shape[1], 32)
 
     @unittest.skip("Slow")
     def test_tune(self):
