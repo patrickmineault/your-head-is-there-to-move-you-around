@@ -8,9 +8,12 @@ import numpy as np
 import os
 import requests
 import subprocess
+import tables
 import time
 
 import torch.utils.data
+
+movie_cache = {}
 
 class PVC1(torch.utils.data.Dataset):
     """
@@ -57,6 +60,7 @@ class PVC1(torch.utils.data.Dataset):
         self.nframestart = nframestart
 
         self.movie_info = _movie_info(root)
+        self.root = root
 
         paths = []
         for item in glob.glob(os.path.join(root, 'neurodata', '*', '*.mat')):
@@ -122,20 +126,24 @@ class PVC1(torch.utils.data.Dataset):
                     spike_frames = np.arange(start_time, 
                                              end_time)
                     bins = spike_frames / 30.0
-                    sequence.append({
-                        'key': key,
-                        'movie_path': os.path.join(root, 
-                                                   'movie_frames', 
-                                                   f"movie{which_movie[0]:03}_{which_movie[1]:03}.images"),
-                        'movie': which_movie[0],
-                        'segment': which_movie[1],
-                        'result': j,
-                        'start_frame': start_time - self.nframedelay - self.ntau + 2,
-                        'end_frame': end_time - self.nframedelay,
-                        'electrode_range': np.arange(cumulative_electrodes, cumulative_electrodes + n_electrodes),
-                        'bins': bins,
-                        'spike_frames': spike_frames,
-                        'nframes': nframes})
+                    for i in range(n_electrodes):
+                        # Although this data was recorded multiple electrodes at a time, give it one electrode at a time
+                        # to fit better with other data, e.g. Jack's
+                        sequence.append({
+                            'key': key,
+                            'movie_path': os.path.join(root, 
+                                                    'movie_frames', 
+                                                    f"movie{which_movie[0]:03}_{which_movie[1]:03}.images"),
+                            'movie': which_movie[0],
+                            'segment': which_movie[1],
+                            'result': j,
+                            'start_frame': start_time - self.nframedelay - self.ntau + 2,
+                            'end_frame': end_time - self.nframedelay,
+                            'abs_electrode_num': cumulative_electrodes + i,
+                            'rel_electrode_num': i,
+                            'bins': bins,
+                            'spike_frames': spike_frames,
+                            'nframes': nframes})
 
             cumulative_electrodes += n_electrodes_seen
 
@@ -148,66 +156,63 @@ class PVC1(torch.utils.data.Dataset):
         tgt = self.sequence[idx]
         bins = tgt['bins']
 
-        imgs = []
-        # The images are natively 320 x 240.
-        for frame in range(tgt['start_frame'], tgt['end_frame']):
-            if frame < 0 or frame >= tgt['nframes']:
-                imgs.append(128 * np.ones((3, self.ny, self.nx)))
-                continue
+        global movie_cache
 
-            im_name = f'movie{tgt["movie"]:03}_{tgt["segment"]:03}_{frame:03}.jpeg'
-            the_im = matplotlib.image.imread(os.path.join(tgt['movie_path'], im_name))
-            the_im = the_im.transpose((2, 0, 1))
-            assert the_im.shape[0] == 3
+        # Lazy load the set of images.
+        index = (tgt['movie'], tgt['segment'])
+        if index not in movie_cache:
+            path = os.path.join(self.root, 'derived/movies.h5')
+            h5file = tables.open_file(path, 'r')
+            node = f'/movie{tgt["movie"]:03}_{tgt["segment"]:03}'
+            movie = h5file.get_node(node)[:]
+            movie_cache[index] = movie
+            h5file.close()
+        else:
+            movie = movie_cache[index]
 
-            cropy = (the_im.shape[1] - self.ny) // 2
-            cropx = (the_im.shape[2] - self.nx) // 2
+        assert tgt['start_frame'] >= 0 and tgt['end_frame'] <= movie.shape[0]
 
-            # All the RFs are at the bottom.
-            rgy = slice(the_im.shape[1] - self.ny, the_im.shape[1])
-            
-            # And in the center.
-            rgx = slice(cropx, cropx + self.nx)
-
-            imgs.append(the_im[:, rgy, rgx])
-
+        # Movie segments are in the shape nframes x nchannels x ny x nx
+        imgs = movie[tgt['start_frame']:tgt['end_frame'], ...].transpose((1, 0, 2, 3))
+        
         # Center and normalize.
         # This seems like a random order, but it's to fit with the ordering
         # the standard ordering of conv3d. 
         # https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html
-        X = (np.stack(imgs, axis=1).astype(np.float32) - 
+        X = (imgs.astype(np.float32) - 
              np.array([83, 81, 73], dtype=np.float32).reshape((3, 1, 1, 1))) / 64.0
         mat_file = self.mat_files[tgt['key']]
         
-        y = []
         batch = mat_file['pepANA']['listOfResults'][tgt['result']]
 
+        el = tgt['rel_electrode_num']
+        y = []
         if batch['noRepeats'] > 1:
-            n_electrodes = len(batch['repeat'][0]['data'])
-            for el in range(n_electrodes):
-                y_ = 0
-                for i in range(len(batch['repeat'])):
-                    # Bin the total number of spikes. This is simply the multi-unit activity.
-                    d_, _ = np.histogram(batch['repeat'][i]['data'][el][0], bins)
-                    y_ += d_
-                y.append(y_ / float(len(batch['repeat'])))
+            y_ = 0
+            for i in range(len(batch['repeat'])):
+                # Bin the total number of spikes. This is simply the multi-unit activity.
+                d_, _ = np.histogram(batch['repeat'][i]['data'][el][0], bins)
+                y_ += d_
+            y.append(y_ / float(len(batch['repeat'])))
         else:
             n_electrodes = len(batch['repeat']['data'])
-            for el in range(n_electrodes):
-                # Bin the total number of spikes. This is simply the multi-unit activity.
-                d_, _ = np.histogram(batch['repeat']['data'][el][0], bins)
-                y.append(d_)
+            
+            # Bin the total number of spikes. This is simply the multi-unit activity.
+            d_, _ = np.histogram(batch['repeat']['data'][el][0], bins)
+            y.append(d_)
 
         y = np.array(y).T.astype(np.float32)
 
         # Create a mask from the electrode range
         m = np.zeros((self.total_electrodes), dtype=np.bool)
-        m[tgt['electrode_range']] = True
+        m[tgt['abs_electrode_num']] = True
+
+        w = m * 1.0
 
         Y = np.zeros((self.total_electrodes, y.shape[0]))
-        Y[tgt['electrode_range'], :] = y.T
+        Y[tgt['abs_electrode_num'], :] = y.T
 
-        return (X, m, Y)
+        return (X, m, w, Y)
 
     def __len__(self):
         # Returns the length of a dataset

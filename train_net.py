@@ -52,8 +52,8 @@ def get_dataset(args):
                                 ntau=9,
                                 nframedelay=0)
 
-        transform = transforms.RandomCrop(223)
-        sz = 223
+        transform = lambda x: x
+        sz = 112
     elif args.dataset == 'pvc2':
         trainset = pvc2.PVC2(os.path.join(args.data_root, 'pvc2'), 
                                     split='train', 
@@ -71,8 +71,8 @@ def get_dataset(args):
         trainset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-pvc4'), 
                                     split='train', 
                                     nt=32, 
-                                    nx=65,
-                                    ny=65,
+                                    nx=args.image_size + 4,
+                                    ny=args.image_size + 4,
                                     ntau=9, 
                                     nframedelay=0,
                                     single_cell=args.single_cell)
@@ -80,14 +80,14 @@ def get_dataset(args):
         tuneset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-pvc4'), 
                                 split='tune', 
                                 nt=32,
-                                nx=65,
-                                ny=65,
+                                nx=args.image_size + 4,
+                                ny=args.image_size + 4,
                                 ntau=9,
                                 nframedelay=0,
                                 single_cell=args.single_cell)
-
-        transform = lambda x: x
-        sz = 65
+        transform = transforms.RandomCrop(args.image_size)
+        # transform = lambda x: x
+        sz = args.image_size
     return trainset, tuneset, transform, sz
 
 
@@ -138,8 +138,9 @@ def log_net(net, layers, writer, n):
                             .25*net.subnet.conv1.weight + .5, n)
         else:
             # NTCHW
+            scale = .5 / abs(net.subnet.conv1.weight).max()
             writer.add_video('Weights/conv1d/img', 
-                            .1*net.subnet.conv1.weight.permute(0, 2, 1, 3, 4) + .5, 
+                            scale * net.subnet.conv1.weight.permute(0, 2, 1, 3, 4) + .5, 
                             n)
 
     # Plot the positions of the receptive fields
@@ -185,9 +186,10 @@ def get_subnet(args, start_size):
                                    nblocks=args.num_blocks, 
                                    nstartfeats=args.nfeats)
         sz = start_size // 2
-    if args.submodel == 'shallownet':
+    if args.submodel.startswith('shallownet'):
+        symmetric = 'symmetric' in args.submodel
         subnet = monkeynet.ShallowNet(nstartfeats=args.nfeats,
-                                      symmetric=True)
+                                      symmetric=symmetric)
         threed = True
         sz = ((start_size + 1) // 2 + 1) // 2
     elif args.submodel == 'gaborpyramid2d':
@@ -230,12 +232,12 @@ def main(args):
 
     trainset, tuneset, transform, start_sz = get_dataset(args)
     trainloader = torch.utils.data.DataLoader(trainset, 
-                                              batch_size=1, 
+                                              batch_size=args.batch_size, 
                                               shuffle=True,
                                               pin_memory=True)
 
     tuneloader = torch.utils.data.DataLoader(tuneset, 
-                                             batch_size=1, 
+                                             batch_size=args.batch_size, 
                                              shuffle=True,
                                              pin_memory=True)
 
@@ -257,7 +259,8 @@ def main(args):
                                    sz, 
                                    trainset.ntau,
                                    sample=(not args.no_sample), 
-                                   threed=threed).to(device)
+                                   threed=threed,
+                                   output_nl='relu').to(device)
 
 
     net.to(device=device)
@@ -293,7 +296,7 @@ def main(args):
     if hasattr(net.subnet, 'relu'):
         net.subnet.relu.register_forward_hook(hook('relu'))
 
-    m, n = 0, 0
+    ll, m, n = 0, 0, 0
     print_frequency = 100
     tune_loss = 0.0
 
@@ -302,10 +305,10 @@ def main(args):
     total_timesteps = torch.zeros(trainset.total_electrodes, device=device, dtype=torch.long)
     
     corr = torch.ones(0)
+    running_loss = 0.0
     try:
         for epoch in range(args.num_epochs):  # loop over the dataset multiple times
-            running_loss = 0.0
-            for i, data in enumerate(trainloader, 0):
+            for data in trainloader:
                 net.train()
                 if n > args.warmup:
                     # Release the Kraken!
@@ -326,28 +329,31 @@ def main(args):
                 mask = torch.any(M, dim=0)
                 M = M[:, mask]
 
-                # Add some soft constraints
-                if n > args.warmup:
-                    loss += constraints(net, mask)
+                labels = labels[:, mask, :]
 
-                # masked mean squared error
-                loss = w[:, mask] * ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
+                assert tuple(outputs.shape) == tuple(labels.shape)
+
+                sum_loss = (w[:, mask].view(-1, mask.sum(), 1) * (M.view(M.shape[0], M.shape[1], 1) * ((outputs - labels) ** 2))).sum()
+                loss = sum_loss / M.sum() / labels.shape[-1]
+
                 loss.backward()
                 optimizer.step()
 
                 # print statistics
                 running_loss += loss.item()
-                
-                writer.add_scalar('Labels/mean', labels.mean(), n)
-                writer.add_scalar('Labels/std', labels.std(), n)
-                writer.add_scalar('Outputs/mean', outputs.mean(), n)
-                writer.add_scalar('Outputs/std', outputs.std(), n)
+
+                label_mean = (M.view(M.shape[0], M.shape[1], 1) * labels).sum() / M.sum() / labels.shape[-1]
+                output_mean = (M.view(M.shape[0], M.shape[1], 1) * outputs).sum() / M.sum() / labels.shape[-1]
+
+                writer.add_scalar('Labels/mean', label_mean, n)
+                writer.add_scalar('Outputs/mean', output_mean, n)
                 writer.add_scalar('Loss/train', loss.item(), n)
                 
-                if i % print_frequency == print_frequency - 1:
+                if ll % print_frequency == print_frequency - 1:
                     log_net(net, layers, writer, n)
-                    print('[%02d, %04d] average train loss: %.3f' % (epoch + 1, i + 1, running_loss / print_frequency ))
+                    print('[%02d, %07d] average train loss: %.3f' % (epoch + 1, n, running_loss / print_frequency ))
                     running_loss = 0
+                    ll = 0
                     
                     if 'xception' in args.submodel:
                         the_max = abs(activations['relu']).max()
@@ -358,7 +364,7 @@ def main(args):
                         writer.add_images('Activations/relu', 
                                         .5 * activations['relu'].reshape(-1, 1, net.height_out, net.width_out) / the_max + .5, 
                                         n, dataformats='NCHW')
-                if i % 10 == 0:
+                if ll % 10 == 0:
                     net.eval()
                     try:
                         tune_data = next(tuneloader_iter)
@@ -368,9 +374,10 @@ def main(args):
 
                         if n > 0:
                             corr = compute_corr(Yl, Yp)
+                            print(corr)
                             print(f'     --> mean tune corr: {corr.mean():.3f}')
-                            writer.add_histogram('tune/corr', corr, n)
-                            writer.add_scalar('tune/corr', corr.mean(), n)
+                            writer.add_histogram('Tune/corr/hist', corr, n)
+                            writer.add_scalar('Tune/corr/mean', corr.mean().item(), n)
                             
                         Yl[:, :] = np.nan
                         Yp[:, :] = np.nan
@@ -378,8 +385,8 @@ def main(args):
                     
                     # get the inputs; data is a list of [inputs, labels]
                     with torch.no_grad():
-                        X, M, _, labels = tune_data
-                        X, M, labels = X.to(device), M.to(device), labels.to(device)
+                        X, M, w, labels = tune_data
+                        X, M, w, labels = X.to(device), M.to(device), w.to(device), labels.to(device)
 
                         X = transform(X)
                         outputs = net((X, M))
@@ -387,16 +394,18 @@ def main(args):
                         mask = torch.any(M, dim=0)
                         M = M[:, mask]
 
-                        nnz = torch.nonzero(mask)[0]
+                        nnz = torch.nonzero(mask).view(-1)
                         
                         for k, j in enumerate(nnz):
+                            m_ = M[:, k].sum()
                             slc = slice(total_timesteps[j].item(), 
-                                        total_timesteps[j].item()+labels.shape[2])
-                            Yl[slc, j.item()] = labels[:, j, :]
-                            Yp[slc, j.item()] = outputs[:, k, :]
-                            total_timesteps[j.item()] += labels.shape[2]
+                                        total_timesteps[j].item() + m_ * labels.shape[2])
+                            Yl[slc, j.item()] = labels[M[:, k], j, :].view(-1)
+                            Yp[slc, j.item()] = outputs[M[:, k], k, :].view(-1)
+                            total_timesteps[j.item()] += m_ * labels.shape[2]
 
-                        loss = ((M.view(M.shape[0], M.shape[1], 1) * (outputs - labels[:, mask, :])) ** 2).sum() / M.sum() / labels.shape[-1]
+                        sum_loss = ((M.view(M.shape[0], M.shape[1], 1) * ((outputs - labels[:, mask, :]) ** 2))).sum()
+                        loss = sum_loss / M.sum() / labels.shape[-1]
 
                         writer.add_scalar('Loss/tune', loss.item(), n)
 
@@ -408,7 +417,8 @@ def main(args):
                         tune_loss = 0
                         m = 0
 
-                n += 1
+                n += args.batch_size
+                ll += 1
 
                 if n % args.ckpt_frequency == 0:
                     save_state(net, f'model.ckpt-{n:07}', output_dir)
@@ -428,7 +438,7 @@ def main(args):
             config = wandb.config
             corr = corr.cpu().detach().numpy()
             corr = corr[~np.isnan(corr)]
-            wandb.log({"tune_corr": corr})
+            wandb.log({"tune_corr": corr, "tune_corr_mean": corr.mean()})
             wandb.watch(net, log="all")
             torch.save(net.state_dict(), 
                     os.path.join(wandb.run.dir, 'model.pt'))
@@ -445,6 +455,8 @@ if __name__ == "__main__":
     parser.add_argument("--submodel", default='xception2d', type=str, help='Sub-model type (currently, either xception2d, gaborpyramid2d, gaborpyramid3d')
     parser.add_argument("--learning_rate", default=5e-3, type=float, help='Learning rate')
     parser.add_argument("--num_epochs", default=20, type=int, help='Number of epochs to train')
+    parser.add_argument("--image_size", default=112, type=int, help='Image size')
+    parser.add_argument("--batch_size", default=1, type=int, help='Batch size')
     parser.add_argument("--nfeats", default=64, type=int, help='Number of features')
     parser.add_argument("--num_blocks", default=0, type=int, help="Num Xception blocks")
     parser.add_argument("--warmup", default=5000, type=int, help="Number of iterations before unlocking tuning RFs and filters")
