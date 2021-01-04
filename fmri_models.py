@@ -397,10 +397,16 @@ def get_feature_model(args):
 
         metadata = {'sz': 112,
                     'threed': True}
-    elif args.features == 'ShallowMonkeyNet':
-        # Load peach-wildflower-102
-        # https://wandb.ai/pmin/crcns-train_net.py/runs/2l21idn1/overview?workspace=user-pmin
-        path = os.path.join(args.ckpt_root, 'shallownet_symmetric_model.ckpt-1040000-2020-12-31 03-29-51.517721.pt')
+    elif args.features.startswith('ShallowMonkeyNet'):
+        if 'pvc4' in args.features:
+            # Load peach-wildflower-102
+            # https://wandb.ai/pmin/crcns-train_net.py/runs/2l21idn1/overview?workspace=user-pmin
+            path = os.path.join(args.ckpt_root, 'shallownet_symmetric_model.ckpt-1040000-2020-12-31 03-29-51.517721.pt')
+        elif 'pvc1' in args.features:
+            # This model was never saved because of a crash
+            path = os.path.join(args.ckpt_root, 'model.ckpt-8700000-2021-01-03 22-34-02.540594.pt')
+        else:
+            raise NotImplementedError('Not implemented')
         checkpoint = torch.load(path)
 
         subnet_dict = extract_subnet_dict(checkpoint)
