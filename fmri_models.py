@@ -404,6 +404,7 @@ def get_feature_model(args):
             path = os.path.join(args.ckpt_root, 'shallownet_symmetric_model.ckpt-1040000-2020-12-31 03-29-51.517721.pt')
         elif 'pvc1' in args.features:
             # This model was never saved because of a crash
+            # From run Jan01_15-45-00_DESKTOP-I8HN3PB_pvc1_shallownet
             path = os.path.join(args.ckpt_root, 'model.ckpt-8700000-2021-01-03 22-34-02.540594.pt')
         else:
             raise NotImplementedError('Not implemented')
@@ -414,7 +415,7 @@ def get_feature_model(args):
         model = ShallowNet(nstartfeats=subnet_dict['bn1.weight'].shape[0],
                            symmetric=subnet_dict['bn1.weight'].shape[0] > subnet_dict['conv1.weight'].shape[0])
         model.load_state_dict(subnet_dict)
-        layers = model.layers
+        layers = [x for _, x in model.layers]
 
         metadata = {'sz': 112,
                     'threed': True}
