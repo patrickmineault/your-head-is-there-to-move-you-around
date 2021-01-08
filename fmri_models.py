@@ -8,7 +8,7 @@ import sklearn.random_projection
 import tables
 from tqdm import tqdm
 
-from loaders import vim2
+from loaders import vim2, pvc4
 from modelzoo import gabor_pyramid, separable_net
 from modelzoo.motionnet import MotionNet
 from modelzoo.slowfast_wrapper import SlowFast
@@ -171,7 +171,7 @@ def preprocess_data(loader,
     # Check if cache exists for this model.
     repo = git.Repo(search_parent_directories=True)
     sha = repo.head.object.hexsha
-    cache_file = f'{args.features}_{args.width}_{args.dataset}_{args.subject}_{loader.dataset.split}_{args.aggregator}_{sha}.h5'
+    cache_file = f'{args.features}_{args.width}_{args.dataset}_{args.subset}_{loader.dataset.split}_{args.aggregator}_{sha}.h5'
     cache_file = os.path.join(args.cache_root, cache_file)
 
     if not os.path.exists(cache_file):
@@ -183,7 +183,11 @@ def preprocess_data(loader,
 
         progress_bar = tqdm(total=len(loader), unit='batches', unit_scale=True)
 
-        for i, (X, Y) in enumerate(loader):
+        for i, loaded in enumerate(loader):
+            if len(loaded) == 2:
+                X, Y = loaded
+            else:
+                X, _, _, Y = loaded
             progress_bar.update(1)
             X, Y = X.to(device='cuda'), Y.to(device='cuda')
 
@@ -229,7 +233,9 @@ def preprocess_data(loader,
     
     h5file = tables.open_file(cache_file, mode="r")
     X = torch.tensor(h5file.get_node(f'/layer{args.layer}')[:], device='cpu')
-    Y = torch.tensor(h5file.get_node(f'/outputs')[:], device='cpu').squeeze()
+    Y = torch.tensor(h5file.get_node(f'/outputs')[:], device='cpu', dtype=torch.float).squeeze()
+    if Y.ndim == 1:
+        Y = Y.reshape(-1, 1)
     h5file.close()
     return X, Y
 
@@ -253,7 +259,16 @@ def get_dataset(args, fold):
                                     nt=1, 
                                     ntau=80, 
                                     nframedelay=nframedelay,
-                                    subject=args.subject)
+                                    subject=args.subset)
+    elif args.dataset == 'pvc4':
+        data = pvc4.PVC4(os.path.join(args.data_root, 'crcns-pvc4'), 
+                            split=fold, 
+                             nt=1, 
+                             nx=112,
+                             ny=112,
+                             ntau=10, 
+                             nframedelay=0,
+                             single_cell=int(args.subset))
     else:
         raise NotImplementedError("Only vim2 implemented")
 
@@ -268,7 +283,7 @@ def get_feature_model(args):
         return hook_fn
 
     if args.features == 'gaborpyramid3d':
-        model = gabor_pyramid.GaborPyramid3d(nlevels=args.layer+1, stride=(1, 1, 1))
+        model = gabor_pyramid.GaborPyramid3d(nlevels=4, stride=(1, 1, 1))
         layers = [model]
         metadata = {'sz': 112,
                     'threed': True}  # The pyramid itself deals with the stride.
@@ -425,6 +440,8 @@ def get_feature_model(args):
     for i, layer in enumerate(layers):
         layer.register_forward_hook(hook(i))
 
+    metadata['nlayers'] = len(layers)
+    
     # Put model in eval mode (for batch_norm, dropout, etc.)
     model.eval()
     return model, activations, metadata
