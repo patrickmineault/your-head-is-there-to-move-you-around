@@ -136,6 +136,7 @@ wandb
 models/
 runs/
 data/
+data_derived/
 pretrained/
 
 model.pt
