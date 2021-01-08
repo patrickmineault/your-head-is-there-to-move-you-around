@@ -269,8 +269,17 @@ def get_dataset(args, fold):
                              ntau=10, 
                              nframedelay=0,
                              single_cell=int(args.subset))
+    elif args.dataset == 'v2':
+        data = pvc4.PVC4(os.path.join(args.data_root, 'crcns-v2'), 
+                            split=fold, 
+                             nt=1, 
+                             nx=112,
+                             ny=112,
+                             ntau=10, 
+                             nframedelay=0,
+                             single_cell=int(args.subset))
     else:
-        raise NotImplementedError("Only vim2 implemented")
+        raise NotImplementedError(f"{args.dataset} implemented")
 
     return data
 
