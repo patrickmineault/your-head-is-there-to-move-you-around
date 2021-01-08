@@ -11,7 +11,7 @@ from pprint import pprint
 class TestPvc4Loader(unittest.TestCase):
     def test_openimfile(self):
         framecount, iconsize, iconside, filetype = pvc4._openimfile(
-            '../data/crcns-pvc4/Nat/r0208D/test.review.mountlake.30_pix.2sizes.imsm')
+            '../data_derived/crcns-pvc4/Nat/r0208D/test.review.mountlake.30_pix.2sizes.imsm')
         self.assertEqual(framecount, 756)
         self.assertEqual(iconsize, 14400)
         self.assertEqual(iconside, 120)
@@ -19,18 +19,18 @@ class TestPvc4Loader(unittest.TestCase):
 
     def test_loadimfile(self):
         data = pvc4._loadimfile(
-            '../data/crcns-pvc4/Nat/r0208D/test.review.mountlake.30_pix.2sizes.imsm')
+            '../data_derived/crcns-pvc4/Nat/r0208D/test.review.mountlake.30_pix.2sizes.imsm')
         self.assertEqual(data.shape[2], 120)
         self.assertEqual(data.shape[0], 756)
 
     def test_loadimfile_iconsize0(self):
         data = pvc4._loadimfile(
-            '../data/crcns-pvc4/NatRev/r0156A/test.natrev.size.mountlake.imsm')
+            '../data_derived/crcns-pvc4/NatRev/r0156A/test.natrev.size.mountlake.imsm')
         self.assertEqual(data.shape[2], 96)
         self.assertEqual(data.shape[0], 7228)
 
     def test_train(self):
-        loader = pvc4.PVC4('../data/crcns-pvc4', 
+        loader = pvc4.PVC4('../data_derived/crcns-pvc4', 
                            nt=32, 
                            nx=64,
                            ny=64,
@@ -50,13 +50,32 @@ class TestPvc4Loader(unittest.TestCase):
         self.assertEqual(y.ndim, 2)
         self.assertEqual(y.shape[1], 32)
 
-    @unittest.skip("Slow")
-    def test_tune(self):
-        _ = pvc4.PVC4('../data/crcns-pvc4', nt=32, split='tune')
+    def test_traintune(self):
+        loader = pvc4.PVC4('../data_derived/crcns-pvc4', 
+                           nt=32, 
+                           nx=64,
+                           ny=64,
+                           split='traintune',
+                           )
 
-    @unittest.skip("Slow")
+        loader[0]
+
+    def test_tune(self):
+        _ = pvc4.PVC4('../data_derived/crcns-pvc4', nt=32, split='tune')
+
     def test_report(self):
-        _ = pvc4.PVC4('../data/crcns-pvc4', nt=32, split='report')
+        _ = pvc4.PVC4('../data_derived/crcns-pvc4', nt=32, split='report')
+
+    def test_v2(self):
+        for i in range(123):
+            loader = pvc4.PVC4('../data_derived/crcns-v2', 
+                            nt=32, 
+                            nx=64,
+                            ny=64,
+                            split='train',
+                            single_cell=i
+                            )
+            loader[0]
 
 
 if __name__ == '__main__':

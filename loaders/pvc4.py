@@ -17,6 +17,8 @@ import time
 import torch.nn.functional as F
 import torch.utils.data
 
+cache = {}
+
 def _openimfile(filepath):
     """translation of openimfile.m"""
     with open(filepath, 'rb') as f:
@@ -41,6 +43,17 @@ def _openimfile(filepath):
             assert abs(iconside - int(iconside)) < 1e-6
             iconside = int(iconside)
             return framecount, iconsize, iconside, filetype
+        elif framecount == 0 and iconsize == 3:
+            filetype = 3
+            framecount, = struct.unpack('<I', f.read(4))
+            spacedimcount, = struct.unpack('<I', f.read(4))
+            assert spacedimcount == 2
+            iconside1, = struct.unpack('<I', f.read(4))
+            iconside2, = struct.unpack('<I', f.read(4))
+            assert iconside1 == iconside2
+            iconside = iconside1
+            iconsize = iconside1 * iconside2
+            return framecount, iconsize, iconside, filetype
         else:
             raise NotImplementedError("Function not fully implemented")
 
@@ -49,12 +62,17 @@ def _loadimfile(filepath):
     """translation of loadimfile.m and readfromimfile"""
     framecount, _, iconside, filetype = _openimfile(filepath)
 
-    if filetype != 2:
+    if filetype == 2:
+        with open(filepath, 'rb') as f:
+            f.read(16)        
+            data = np.frombuffer(f.read(), dtype=np.uint8)
+    elif filetype == 3:
+        with open(filepath, 'rb') as f:
+            f.read(24)        
+            data = np.frombuffer(f.read(), dtype=np.uint8)
+    else:
         raise NotImplementedError("Function not fully implemented")
 
-    with open(filepath, 'rb') as f:
-        f.read(16)        
-        data = np.frombuffer(f.read(), dtype=np.uint8)
     
     data = data.reshape((framecount, iconside, iconside))[:, ::-1, :]
     return data
@@ -94,7 +112,7 @@ class PVC4(torch.utils.data.Dataset):
         framerate = 72
         min_seconds = 60  # At least one minute of data
 
-        if split not in ('train', 'tune', 'report'):
+        if split not in ('train', 'tune', 'report', 'traintune'):
             raise NotImplementedError('Split is set to an unknown value')
 
         if ntau + nframedelay > nframestart:
@@ -107,68 +125,83 @@ class PVC4(torch.utils.data.Dataset):
         self.nframedelay = nframedelay
         self.nframestart = nframestart
         self.single_cell = single_cell
+        self.split = split
 
-        paths = []
-        for item in glob.glob(os.path.join(root, 'Nat', '*', '*summary_file.mat')):
-            paths.append(item)
+        cells = []
+        for item in glob.glob(os.path.join(root, 'Nat', '*')):
+            cells.append(item)
         
-        for item in glob.glob(os.path.join(root, 'NatRev', '*', '*summary_file.mat')):
-            paths.append(item)
+        for item in glob.glob(os.path.join(root, 'NatRev', '*')):
+            cells.append(item)
 
-        paths = sorted(paths)
+        cells = sorted(cells)
+
+        if single_cell != -1:
+            cells = [cells[single_cell]]
 
         images = []
-        cells = []
         spktimes = []
 
-        cell_info = collections.defaultdict(list)
+        cell_info = collections.OrderedDict()
         i = 0
-        for path in paths:
-            summary = utils.load_mat_as_dict(path)
-            
-            respfiles = summary['celldata']['respfile']
-            stimfiles = summary['celldata']['stimfile']
-            cellids = summary['celldata']['cellid']
-            repcounts = summary['celldata']['repcount']
+        for cell in cells:
+            paths = glob.glob(os.path.join(cell, '*summary_file.mat'))
+            for path in paths:
+                summary = utils.load_mat_as_dict(path)
+                
+                respfiles = summary['celldata']['respfile']
+                stimfiles = summary['celldata']['stimfile']
+                cellids = summary['celldata']['cellid']
+                repcounts = summary['celldata']['repcount']
 
-            ntraining_frames = np.array(summary['celldata']['resplen']).sum()
-            if ntraining_frames < framerate * min_seconds:
-                continue
+                ntraining_frames = np.array(summary['celldata']['resplen']).sum()
 
-            if not isinstance(respfiles, list):
-                respfiles = [respfiles]
-                stimfiles = [stimfiles]
-                cellids = [cellids]
-                repcounts = [repcounts]
+                if not isinstance(respfiles, list):
+                    respfiles = [respfiles]
+                    stimfiles = [stimfiles]
+                    cellids = [cellids]
+                    repcounts = [repcounts]
 
-            for respfile, stimfile, cellid, repcount in zip(respfiles, stimfiles, cellids, repcounts):
-                assert '+' not in respfile
-                resppath = os.path.join(os.path.dirname(path), 
-                                    respfile)
+                for respfile, stimfile, cellid, repcount in zip(respfiles, stimfiles, cellids, repcounts):
+                    assert '+' not in respfile
+                    resppath = os.path.join(os.path.dirname(path), 
+                                        respfile)
 
-                try:
-                    data = pd.read_csv(resppath, sep='\t', header=None)
-                except FileNotFoundError:
-                    continue
+                    if resppath.endswith('.mat'):
+                        # Mat format
+                        mat = utils.load_mat_as_dict(resppath)
+                        repcount = mat['trialcount']
+                        spikes = mat['psth']
+                    else:
+                        # Text format
+                        try:
+                            data = pd.read_csv(resppath, sep='\t', header=None)
+                        except FileNotFoundError:
+                            continue
 
-                spikes = data.iloc[:, 2].tolist()
+                        spikes = np.array(data.iloc[:, 2].tolist())
 
-                stimpath = os.path.join(os.path.dirname(path), 
-                                        stimfile)
+                    stimpath = os.path.join(os.path.dirname(path), stimfile)
+                    framecount, iconsize, iconside, filetype = _openimfile(stimpath)
+                    if iconside < 32:
+                        print("iconside is small")
+                        print(iconside)
 
-                stim = _loadimfile(stimpath)
-                if stim.shape[1] < 60:
-                    continue
+                    info = {
+                            'cellid': cellid,                        
+                            'images_path': stimpath,
+                            'spktimes': spikes,
+                            'nrepeats': repcount,
+                            'ntrainingframes': framecount,
+                            'iconside': iconside,
+                            }
 
-                info = {
-                        'cellid': cellid,
-                        'images': stim,
-                        'spktimes': spikes,
-                        'nrepeats': repcount,
-                        }
+                    if cellid not in cell_info:
+                        cell_info[cellid] = [info]
+                    else:
+                        cell_info[cellid].append(info)
 
-                cell_info[cellid].append(info)
-                i += 1
+                    i += 1
 
 
         # Average a tune or report block to 10 seconds
@@ -176,13 +209,17 @@ class PVC4(torch.utils.data.Dataset):
         sequence = []
         n_electrodes = 0
         
-        for cell_files in cell_info.values():
-            ntraining_frames = sum([x['images'].shape[0] for x in cell_files])
+        for j, cell_files in enumerate(cell_info.values()):
+            ntraining_frames = sum([x['ntrainingframes'] for x in cell_files])
+            
             if ntraining_frames < min_seconds * framerate:
                 # This is less than 2 minutes of data
+                print(ntraining_frames)
+                print(cell_files[0]['cellid'])
+                raise Exception("less than 1 minute of data")
                 continue
 
-            largest_size = max([x['images'].shape[1] for x in cell_files])
+            largest_size = max([x['iconside'] for x in cell_files])
             
             # Figure out if there's a natural report fold for this dataset
             repeats = np.array([x['nrepeats'] for x in cell_files])
@@ -193,11 +230,13 @@ class PVC4(torch.utils.data.Dataset):
                 splits = {'train': [0, 1, 2, 3, 5, 6, 7, 8, 9],
                   'tune': [4],
                   'report': [],
+                  'traintune': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
                 }
             else:
                 splits = {'train': [0, 1, 2, 3, 5, 6, 7, 8],
                   'tune': [4],
                   'report': [9],
+                  'traintune': [0, 1, 2, 3, 4, 5, 6, 7, 8],
                 }
             
             n = 0
@@ -214,16 +253,7 @@ class PVC4(torch.utils.data.Dataset):
             mean_spk = total_spikes / total_frames
 
             for i, experiment in enumerate(cell_files):
-                sz = experiment['images'].shape[1]
-                if sz < largest_size:
-                    # Pad the movie to this size
-                    X = 20 * np.ones((experiment['images'].shape[0], largest_size, largest_size), dtype=np.uint8)
-                    delta = (X.shape[1] - sz) // 2
-                    assert delta > 0
-                    rg = slice(delta, delta + sz)
-                    X[:, rg, rg] = experiment['images']
-                    experiment['images'] = X
-
+                sz = experiment['iconside']
                 nframes = len(experiment['spktimes'])
                 all_spks = np.array(experiment['spktimes'])
 
@@ -242,7 +272,7 @@ class PVC4(torch.utils.data.Dataset):
                     if (int(n / block_size) % block_size in splits[split]
                         or (split == 'report' and i == report_set)):
                         sequence.append({
-                            'images': experiment['images'],
+                            'images_path': experiment['images_path'],
                             'start_frame': start_time - self.nframedelay - self.ntau + 2,
                             'end_frame': end_time - self.nframedelay,
                             'spikes': spk,
@@ -251,6 +281,7 @@ class PVC4(torch.utils.data.Dataset):
                             'cellnum': n_electrodes,
                             'nrepeats': experiment['nrepeats'],
                             'mean_spk': mean_spk,
+                            'iconside': largest_size,
                         })
 
                     n += 1
@@ -261,22 +292,29 @@ class PVC4(torch.utils.data.Dataset):
         self.sequence = sequence
         self.total_electrodes = n_electrodes
 
-        if self.single_cell != -1:
-            # Pick a single cell
-            self.sequence = [x for x in self.sequence if x['cellnum'] == self.single_cell]
-            for s in self.sequence:
-                s['cellnum'] = 0
-            self.total_electrodes = 1
-
         if self.total_electrodes == 0:
             raise Exception("Didn't find any data")
 
     def __getitem__(self, idx):
         # Load a single segment of length idx from disk.
+        global cache
         tgt = self.sequence[idx]
 
         # The images are natively different sizes, grayscale.
-        ims = tgt['images']
+        
+        if tgt['images_path'] not in cache:
+            X_ = _loadimfile(tgt['images_path'])
+            if X_.shape[1] < tgt['iconside']:
+                X = 20 * np.ones((X_.shape[0], tgt['iconside'], tgt['iconside']), dtype=np.uint8)
+                delta = (X.shape[1] - X_.shape) // 2
+                assert delta > 0
+                rg = slice(delta, delta + X_.shape[1])
+                X[:, rg, rg] = X_
+                X_ = X
+
+            cache[tgt['images_path']] = X_
+
+        ims = cache[tgt['images_path']]
         ims = ims[tgt['start_frame']:tgt['end_frame'], :, :].astype(np.float32)
         X = np.stack([ims, ims, ims], axis=0)
 
