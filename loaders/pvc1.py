@@ -46,6 +46,8 @@ class PVC1(torch.utils.data.Dataset):
                  split='train',
                  ):
 
+        framerate = 30.0
+
         if split not in ('train', 'tune', 'report'):
             raise NotImplementedError('Split is set to an unknown value')
 
@@ -125,7 +127,7 @@ class PVC1(torch.utils.data.Dataset):
                     end_time = min((nframes, start_time + nskip + 1))
                     spike_frames = np.arange(start_time, 
                                              end_time)
-                    bins = spike_frames / 30.0
+                    bins = spike_frames / framerate
                     for i in range(n_electrodes):
                         # Although this data was recorded multiple electrodes at a time, give it one electrode at a time
                         # to fit better with other data, e.g. Jack's
@@ -137,8 +139,8 @@ class PVC1(torch.utils.data.Dataset):
                             'movie': which_movie[0],
                             'segment': which_movie[1],
                             'result': j,
-                            'start_frame': start_time - self.nframedelay - self.ntau + 2,
-                            'end_frame': end_time - self.nframedelay,
+                            'start_frame': start_time - self.nframedelay - self.ntau,
+                            'end_frame': end_time - self.nframedelay - 2,
                             'abs_electrode_num': cumulative_electrodes + i,
                             'rel_electrode_num': i,
                             'bins': bins,
@@ -161,7 +163,7 @@ class PVC1(torch.utils.data.Dataset):
         # Lazy load the set of images.
         index = (tgt['movie'], tgt['segment'])
         if index not in movie_cache:
-            path = os.path.join(self.root, 'derived/movies.h5')
+            path = os.path.join(self.root, 'movies.h5')
             h5file = tables.open_file(path, 'r')
             node = f'/movie{tgt["movie"]:03}_{tgt["segment"]:03}'
             movie = h5file.get_node(node)[:]
@@ -223,16 +225,17 @@ def _movie_info(root):
     Build up a hashmap from tuples of (movie, segment) to info about the 
     movie, including location and duration
     """
+    path = os.path.join(root, 'movies.h5')
+    h5file = tables.open_file(path, 'r')
     movie_info = {}
     for i in range(30):
         for j in range(4):
-            root_ = os.path.join(root, "movie_frames", f"movie{j:03}_{i:03}.images")
-            with open(os.path.join(root_, 'nframes'), 'r') as f:
-                nframes = int(f.read())
+            node = f'/movie{j:03}_{i:03}'
+            nframes = len(h5file.get_node(node))
             
-            movie_info[(j, i)] = {'nframes': nframes,
-                                  'root': root}
+            movie_info[(j, i)] = {'nframes': nframes}
     
+    h5file.close()
     return movie_info
 
 def download(root, url=None):
