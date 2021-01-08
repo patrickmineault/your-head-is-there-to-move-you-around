@@ -63,9 +63,10 @@ class TestFmriModels(unittest.TestCase):
         X_ = rp(X)
         self.assertEqual(X_.shape[1], 100)
 
+    @unittest.skip("Slow")
     def test_caching(self):
         with tempfile.TemporaryDirectory() as tmpdirname:
-            args = wrap({'subject': 's1',
+            args = wrap({'subset': 's1',
                         'batch_size': 10,
                         'features': 'gaborpyramid3d',
                         'aggregator': 'average',
@@ -116,9 +117,10 @@ class TestFmriModels(unittest.TestCase):
             # Should be at least five times faster
             self.assertGreater(dt, dt2 * 5)
 
+    @unittest.skip("Slow")
     def test_caching_2d(self):
         with tempfile.TemporaryDirectory() as tmpdirname:
-            args = wrap({'subject': 's1',
+            args = wrap({'subset': 's1',
                         'batch_size': 10,
                         'features': 'resnet18',
                         'aggregator': 'average',
