@@ -44,13 +44,13 @@ def get_dataset(args):
                                     split='train', 
                                     nt=32, 
                                     ntau=9, 
-                                    nframedelay=2)
+                                    nframedelay=0)
 
         tuneset = pvc1.PVC1(os.path.join(args.data_root, 'crcns-ringach-data'), 
                                 split='tune', 
                                 nt=32,
                                 ntau=9,
-                                nframedelay=2)
+                                nframedelay=0)
 
         transform = lambda x: x
         sz = 112

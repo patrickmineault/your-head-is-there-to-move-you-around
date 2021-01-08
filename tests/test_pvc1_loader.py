@@ -9,6 +9,26 @@ import torch
 from pprint import pprint
 
 class TestPvc1Loader(unittest.TestCase):
+    def test_delays(self):
+        loader = pvc1.PVC1('../data/crcns-ringach-data/',
+                    nt=9,
+                    ntau=7,
+                    nframedelay=0)
+        s0 = loader.sequence[0]
+        # according to the docs, frame k runs from kT to (k+1)T,
+        # where T = 1/30. Hence the end of the last frame should coincide
+        # with the start of the response.
+        self.assertEqual(s0['end_frame'], s0['spike_frames'][-2])
+
+        loader = pvc1.PVC1('../data/crcns-ringach-data/',
+                           nt=1,
+                           ntau=7,
+                           nframedelay=0)
+
+        s0 = loader.sequence[0]
+        self.assertEqual(s0['end_frame'], s0['spike_frames'][-2])
+
+    @unittest.skip("Slow")
     def test_batching(self):
         loader = pvc1.PVC1('../data/crcns-ringach-data/',
                                   ntau=7)
@@ -28,6 +48,7 @@ class TestPvc1Loader(unittest.TestCase):
         self.assertEqual(y.shape[2], loader.nt)
         self.assertEqual(y.shape[0], 8)
 
+    @unittest.skip("Slow")
     def test_sequential(self):
         loader = pvc1.PVC1('../data/crcns-ringach-data/',
                                   ntau=7)
