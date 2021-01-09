@@ -22,12 +22,17 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
                   activations, metadata, args):
     print(f"Processing layer {args.layer}")
     t0 = time.time()
+
     X, Y = preprocess_data(trainloader, 
                            feature_model, 
                            aggregator,
                            activations, 
                            metadata,
                            args)
+
+    if X is None:
+        print(f"Skipping layer {args.layer}")
+        return
 
     m = X.mean(axis=0, keepdims=True)
     s = X.std(axis=0, keepdims=True) + ff
@@ -48,7 +53,7 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
 
     # Use k-fold cross-validation
     kfold = 5
-    lambdas = np.array([1, 10, 100, 1000, 10000, 100000])
+    lambdas = np.logspace(0, 5, num=11)
     splits = (np.arange(X.shape[0]) / 100).astype(np.int) % kfold
 
     # Store predictions in main memory to prevent out-of-memory errors.
@@ -134,12 +139,14 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
         'feature_mean': m.squeeze().cpu().detach().numpy(),
         'feature_std': s.squeeze().cpu().detach().numpy(),
         'fit_time': time.time() - t0,
-        'cka_report': cka_report,
+        'cka_report': cka_report.item(),
+        'layer': args.layer,
     }
 
     if not args.no_wandb:
-        wandb.init(project="train_fmri_convex.py", 
-                config=vars(args))
+        run = wandb.init(project="train_fmri_convex.py", 
+                         config=vars(args),
+                         reinit=True)
         config = wandb.config
         
         # This allows the info to be visible in the dashboard
@@ -164,6 +171,7 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
             pickle.dump(results, f)
 
         wandb.save(out_path)
+        run.finish()
     else:
         print(results)
 
@@ -197,6 +205,7 @@ def main(args):
                                              pin_memory=True
                                              )
 
+    args.ntau = trainset.ntau
     feature_model, activations, metadata = get_feature_model(args)
     aggregator = get_aggregator(metadata, args)
     feature_model.to(device=device)
@@ -213,14 +222,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=desc)
     
     parser.add_argument("--exp_name", required=True, help='Friendly name of experiment')
-    parser.add_argument("--width", default=112, type=int, help='Width the video will be resized to')
     parser.add_argument("--features", default='gaborpyramid3d', type=str, help='What kind of features to use')
     parser.add_argument("--aggregator", default='average', type=str, help='What kind of aggregator to use')
     parser.add_argument("--aggregator_sz", default=8, type=int, help='The size the aggregator will be used with')
     parser.add_argument("--batch_size", default=4, type=int, help='Batch size')
     parser.add_argument("--pca", default=-1, type=int, help='Size of PCA before model fit (if applicable)')
 
-    parser.add_argument("--no_sample", default=False, help='Whether to use a normal gaussian layer rather than a sampled one', action='store_true')
     parser.add_argument("--no_wandb", default=False, help='Skip using W&B', action='store_true')
     parser.add_argument("--no_save", default=False, help='Skip saving weights', action='store_true')
     
