@@ -170,8 +170,7 @@ class PVC4(torch.utils.data.Dataset):
                     if resppath.endswith('.mat'):
                         # Mat format
                         mat = utils.load_mat_as_dict(resppath)
-                        repcount = mat['trialcount']
-                        spikes = mat['psth']
+                        spikes = mat['psth']                        
                     else:
                         # Text format
                         try:
@@ -225,6 +224,7 @@ class PVC4(torch.utils.data.Dataset):
             repeats = np.array([x['nrepeats'] for x in cell_files])
             the_report = repeats.argmax()
             report_set = -1
+
             if len(cell_files) > 1 and repeats[the_report] >= 10:
                 report_set = the_report
                 splits = {'train': [0, 1, 2, 3, 5, 6, 7, 8, 9],
@@ -238,7 +238,7 @@ class PVC4(torch.utils.data.Dataset):
                   'report': [9],
                   'traintune': [0, 1, 2, 3, 4, 5, 6, 7, 8],
                 }
-            
+
             n = 0
             nskip = nt
 
@@ -265,7 +265,7 @@ class PVC4(torch.utils.data.Dataset):
                     end_time = min((nframes, start_time + nskip + 1))
 
                     spk = np.array(experiment['spktimes'][start_time+1:end_time])
-                    if np.any(spk < 0):
+                    if np.any(spk < 0) or np.any(np.isnan(spk)):
                         # Skip this chunk
                         continue
 
@@ -294,6 +294,9 @@ class PVC4(torch.utils.data.Dataset):
 
         if self.total_electrodes == 0:
             raise Exception("Didn't find any data")
+
+        if self.total_electrodes == 1:
+            print(f"Loaded cell {self.sequence[-1]['cellid']}")
 
     def __getitem__(self, idx):
         # Load a single segment of length idx from disk.
