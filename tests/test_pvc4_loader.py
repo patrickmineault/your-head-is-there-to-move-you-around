@@ -2,6 +2,7 @@ import sys
 sys.path.append('../')
 
 from loaders import pvc4
+import numpy as np
 import tempfile
 import time
 import unittest
@@ -68,6 +69,7 @@ class TestPvc4Loader(unittest.TestCase):
 
     def test_v2(self):
         for i in range(123):
+            print(i)
             loader = pvc4.PVC4('../data_derived/crcns-v2', 
                             nt=32, 
                             nx=64,
@@ -75,7 +77,9 @@ class TestPvc4Loader(unittest.TestCase):
                             split='train',
                             single_cell=i
                             )
-            loader[0]
+            X, _, _, Y = loader[0]
+            self.assertEqual(np.isnan(X).sum(), 0)
+            self.assertEqual(np.isnan(Y).sum(), 0)
 
 
 if __name__ == '__main__':
