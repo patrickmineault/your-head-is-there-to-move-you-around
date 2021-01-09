@@ -64,7 +64,7 @@ class Downsampler(nn.Module):
 
     def forward(self, X):
         nt = 4
-        assert X.shape[2] in (10, 20, 40, 80), "X.shape[2] must be 10 x a power of 2"
+        assert X.shape[2] in (5, 10, 20, 40, 80), "X.shape[2] must be 10 x a power of 2"
         big_pixel = X.shape[-1] // self.sz
         
         stride = X.shape[2] // (nt + 1)  # Always use at most 4 time points
@@ -171,7 +171,7 @@ def preprocess_data(loader,
     # Check if cache exists for this model.
     repo = git.Repo(search_parent_directories=True)
     sha = repo.head.object.hexsha
-    cache_file = f'{args.features}_{args.width}_{args.dataset}_{args.subset}_{loader.dataset.split}_{args.aggregator}_{sha}.h5'
+    cache_file = f'{args.features}_{metadata["sz"]}_{args.dataset}_{args.subset}_{loader.dataset.split}_{args.aggregator}_{sha}.h5'
     cache_file = os.path.join(args.cache_root, cache_file)
 
     if not os.path.exists(cache_file):
@@ -192,12 +192,16 @@ def preprocess_data(loader,
             X, Y = X.to(device='cuda'), Y.to(device='cuda')
 
             with torch.no_grad():
-                X = resize(X, args.width)
+                X = resize(X, metadata['sz'])
                 if metadata['threed']:
                     result = model(X)
                     
                     for layer in activations.keys():
-                        fit_layer = aggregator(activations[layer]).cpu().detach().numpy()
+                        try:
+                            fit_layer = aggregator(activations[layer]).cpu().detach().numpy()
+                        except AssertionError:
+                            # This is because the output is too small
+                            continue
                         
                         if outputs is None:
                             layers[layer] = h5file.create_earray('/', f'layer{layer}', obj=fit_layer, expectedrows=nrows)
@@ -232,7 +236,11 @@ def preprocess_data(loader,
         h5file.close()
     
     h5file = tables.open_file(cache_file, mode="r")
-    X = torch.tensor(h5file.get_node(f'/layer{args.layer}')[:], device='cpu')
+    try:
+        X = torch.tensor(h5file.get_node(f'/layer{args.layer}')[:], device='cpu')
+    except tables.exceptions.NoSuchNodeError:
+        h5file.close()
+        return None, None
     Y = torch.tensor(h5file.get_node(f'/outputs')[:], device='cpu', dtype=torch.float).squeeze()
     if Y.ndim == 1:
         Y = Y.reshape(-1, 1)
@@ -331,7 +339,7 @@ def get_feature_model(args):
         layers = [layer for layer in model.features if 
                   layer.__repr__().startswith('ReLU')]
 
-        metadata = {'sz': 112,
+        metadata = {'sz': 224,
                     'threed': False}
     elif args.features in ('resnet18'):
         model = resnet18(pretrained=True)
@@ -356,7 +364,7 @@ def get_feature_model(args):
             model.layer4[1],
         )
 
-        metadata = {'sz': 112,
+        metadata = {'sz': 224,
                     'threed': False}
     elif args.features in ('SlowFast_Slow', 'SlowFast_Fast', 'Slow', 'I3D'):
         model = SlowFast(args)
@@ -404,7 +412,7 @@ def get_feature_model(args):
                 model.model.s5.pathway0_res2,
             )
 
-        metadata = {'sz': 112,
+        metadata = {'sz': 224,
                     'threed': True}
     elif args.features in ('ShiftNet'):
         model = ShiftNet(args)
