@@ -200,6 +200,14 @@ def derive_pvc4(args):
             # The image file is truncated
             continue
 
+        if 'r0056' in val[0]['summarypath']:
+            # Too many nans
+            continue
+
+        if 'e0101' in val[0]['summarypath']:
+            # Not enough data
+            continue
+
         ntraining_frames = sum([x['framecount'] for x in val])
         if ntraining_frames < framerate * min_seconds:
             continue
