@@ -31,7 +31,7 @@ class SlowFast(nn.Module):
             os.path.join(args.slowfast_root, 'configs', yaml)
         )
         cfg.NUM_GPUS = 1
-        cfg.DATA.NUM_FRAMES = 80
+        cfg.DATA.NUM_FRAMES = args.ntau
         model = build_model(cfg)
 
         # Now load the weights.
