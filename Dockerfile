@@ -7,9 +7,10 @@ RUN apt-get update && apt-get install -y wget unzip git
 RUN pip install -r requirements.txt
 
 # gcc needed for python mscoco lib
+# ffmpeg for cv2
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && \
-    apt-get -y install gcc mono-mcs && \
+    apt-get -y install gcc mono-mcs ffmpeg libsm6 libxext6 && \
     rm -rf /var/lib/apt/lists/*
 
 # Pre-built
