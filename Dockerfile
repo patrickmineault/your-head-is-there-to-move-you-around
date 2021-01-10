@@ -16,6 +16,6 @@ RUN apt-get update && \
 RUN python -m pip install detectron2 -f \
   https://dl.fbaipublicfiles.com/detectron2/wheels/cu110/torch1.7/index.html
 
-RUN git clone https://github.com/facebookresearch/slowfast.git; cd SlowFast; python setup.py build develop; cd ..
+RUN git clone https://github.com/facebookresearch/slowfast.git; cd slowfast; python setup.py build develop; cd ..
 
 RUN git clone https://github.com/patrickmineault/research_code.git; cd research_code; pip install -e .; cd ..
