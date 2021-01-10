@@ -1,4 +1,5 @@
 av
+GitPython
 gluoncv
 matplotlib
 pandas
