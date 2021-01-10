@@ -13,6 +13,7 @@ do
             --features "$model" \
             --subset "$subset" \
             --batch_size 8 \
+            --ckpt_root /storage/checkpoints \
             --data_root /storage/data_derived \
             --slowfast_root ../slowfast \
             --aggregator downsample \
