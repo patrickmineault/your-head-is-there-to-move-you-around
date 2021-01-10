@@ -310,11 +310,12 @@ class PVC4(torch.utils.data.Dataset):
         # Mean and standard deviation vary widely across the image and across 
         # sequences. We normalize against the mean of means and standard 
         # deviations across images.
-        if self.root.contains('pvc4'):
+        if 'pvc4' in self.root:
             mm, ss, infill = 54, 43, 20
-            
-        elif self.root.contains('v2'):
+        elif 'v2' in self.root:
             mm, ss, infill = 73, 47, 73
+        else:
+            raise NotImplementedError()
 
         if tgt['images_path'] not in cache:
             X_ = _loadimfile(tgt['images_path'])
