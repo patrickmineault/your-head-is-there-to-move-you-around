@@ -30,6 +30,37 @@ class TestPvc4Loader(unittest.TestCase):
         self.assertEqual(data.shape[2], 96)
         self.assertEqual(data.shape[0], 7228)
 
+    def test_disjoint(self):
+
+        traintune = pvc4.PVC4('../data_derived/crcns-pvc4', 
+                           nt=32, 
+                           nx=64,
+                           ny=64,
+                           split='traintune',
+                           )
+        reportset = pvc4.PVC4('../data_derived/crcns-pvc4', 
+                           nt=32, 
+                           nx=64,
+                           ny=64,
+                           split='report',
+                           )
+
+        traintune_seq = {'../data_derived/crcns-pvc4/Nat/r0206B/test.review.clown.10sec.imsm':
+                        np.zeros(707)}
+        reportset_seq = {'../data_derived/crcns-pvc4/Nat/r0206B/test.review.clown.10sec.imsm':
+                        np.zeros(707)}
+
+        for s in traintune.sequence:
+            if s['images_path'] in traintune_seq:
+                traintune_seq[s['images_path']][s['start_spktime']:s['end_spktime']] = 1
+
+        for s in reportset.sequence:
+            if s['images_path'] in reportset_seq:
+                reportset_seq[s['images_path']][s['start_spktime']:s['end_spktime']] = 1
+
+        self.assertEqual(np.sum(traintune_seq['../data_derived/crcns-pvc4/Nat/r0206B/test.review.clown.10sec.imsm']), 0)
+        self.assertGreater(np.sum(reportset_seq['../data_derived/crcns-pvc4/Nat/r0206B/test.review.clown.10sec.imsm']), 0)
+
     def test_train(self):
         loader = pvc4.PVC4('../data_derived/crcns-pvc4', 
                            nt=32, 

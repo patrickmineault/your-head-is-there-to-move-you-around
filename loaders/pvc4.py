@@ -269,7 +269,7 @@ class PVC4(torch.utils.data.Dataset):
                         # Skip this chunk
                         continue
 
-                    if (int(n / block_size) % block_size in splits[split]
+                    if (((int(n / block_size) % block_size in splits[split]) and (i != report_set))
                         or (split == 'report' and i == report_set)):
                         sequence.append({
                             'images_path': experiment['images_path'],
@@ -282,6 +282,8 @@ class PVC4(torch.utils.data.Dataset):
                             'nrepeats': experiment['nrepeats'],
                             'mean_spk': mean_spk,
                             'iconside': largest_size,
+                            'start_spktime': start_time + 1,
+                            'end_spktime': end_time,
                         })
 
                     n += 1
