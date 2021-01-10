@@ -1,11 +1,8 @@
-av
 GitPython
-gluoncv
 matplotlib
 pandas
 python-dict-wrapper
 scipy
 tables
-tensorboard
 tqdm
 wandb
