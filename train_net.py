@@ -94,10 +94,30 @@ def get_dataset(args):
                                     nx=args.image_size,
                                     ny=args.image_size,
                                     ntau=10, 
-                                    nframedelay=0,
+                                    nframedelay=1,
                                     single_cell=args.single_cell)
 
         tuneset = mt2.MT2(os.path.join(args.data_root, 'crcns-mt2'), 
+                                split='tune', 
+                                nt=32,
+                                nx=args.image_size,
+                                ny=args.image_size,
+                                ntau=10,
+                                nframedelay=1,
+                                single_cell=args.single_cell)
+        transform = lambda x:x
+        sz = args.image_size
+    elif args.dataset == 'v2':
+        trainset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-v2'), 
+                                    split='train', 
+                                    nt=32, 
+                                    nx=args.image_size,
+                                    ny=args.image_size,
+                                    ntau=10, 
+                                    nframedelay=0,
+                                    single_cell=args.single_cell)
+
+        tuneset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-v2'), 
                                 split='tune', 
                                 nt=32,
                                 nx=args.image_size,
@@ -480,7 +500,8 @@ def main(args):
                         tune_loss = 0
                         m = 0
 
-                scheduler.step()
+                if schedule is not None:
+                    scheduler.step()
 
                 n += args.batch_size
                 ll += 1
