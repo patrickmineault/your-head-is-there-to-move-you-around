@@ -262,7 +262,7 @@ def get_aggregator(metadata, args):
 def get_dataset(args, fold):
     if args.dataset == 'vim2':
         nframedelay = -3
-        data = vim2.Vim2(os.path.join(args.data_root, 'crcns-vim2/derived'), 
+        data = vim2.Vim2(os.path.join(args.data_root, 'crcns-vim2'), 
                                     split=fold, 
                                     nt=1, 
                                     ntau=80, 
@@ -293,7 +293,7 @@ def get_dataset(args, fold):
                              nx=112,
                              ny=112,
                              ntau=10, 
-                             nframedelay=0,
+                             nframedelay=1,
                              single_cell=int(args.subset))
 
     else:
