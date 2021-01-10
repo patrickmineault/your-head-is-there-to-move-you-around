@@ -238,6 +238,7 @@ class PVC4(torch.utils.data.Dataset):
                   'report': [9],
                   'traintune': [0, 1, 2, 3, 4, 5, 6, 7, 8],
                 }
+            nblocks = 10
 
             n = 0
             nskip = nt
@@ -258,6 +259,7 @@ class PVC4(torch.utils.data.Dataset):
                 all_spks = np.array(experiment['spktimes'])
 
                 for start_time in range(self.nframestart, nframes, nskip):
+                    
                     if start_time + nskip + 1 > nframes:
                         # Incomplete frame.
                         continue
@@ -269,8 +271,9 @@ class PVC4(torch.utils.data.Dataset):
                         # Skip this chunk
                         continue
 
-                    if (((int(n / block_size) % block_size in splits[split]) and (i != report_set))
+                    if (((int(n / block_size) % nblocks in splits[split]) and (i != report_set))
                         or (split == 'report' and i == report_set)):
+                        
                         sequence.append({
                             'images_path': experiment['images_path'],
                             'start_frame': start_time - self.nframedelay - self.ntau + 2,

@@ -76,11 +76,13 @@ class Vim2(torch.utils.data.Dataset):
         else:
             seq_end = 7200
 
+        nblocks = 10
+
         for i in range(0, seq_end, self.nt):
             which_bucket = i // block_len
             if (split == 'traintune' or
-                (split == 'train' and (which_bucket % 10) != 4) or 
-                (split == 'tune' and (which_bucket % 10) == 4) or
+                (split == 'train' and (which_bucket % nblocks) != 4) or 
+                (split == 'tune' and (which_bucket % nblocks) == 4) or
                 (split == 'report')):
                 sequences.append(
                     {'subject': self.subject, 

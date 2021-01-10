@@ -81,6 +81,8 @@ class PVC1(torch.utils.data.Dataset):
                   'report': [9],
                   }
 
+        nblocks = 10
+
         cumulative_electrodes = 0
         nrepeats = []
         for path in paths:
@@ -110,7 +112,7 @@ class PVC1(torch.utils.data.Dataset):
                 set_num += 1
 
                 # The train, tune and report splits
-                if set_num % 10 not in splits[split]:
+                if set_num % nblocks not in splits[split]:
                     continue
 
                 which_movie = condition['values']

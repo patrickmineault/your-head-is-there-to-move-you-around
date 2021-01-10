@@ -31,35 +31,68 @@ class TestPvc4Loader(unittest.TestCase):
         self.assertEqual(data.shape[0], 7228)
 
     def test_disjoint(self):
-
+        """Check that the train and report sets are disjoint."""
         traintune = pvc4.PVC4('../data_derived/crcns-pvc4', 
                            nt=32, 
                            nx=64,
                            ny=64,
                            split='traintune',
+                           single_cell=0,
                            )
         reportset = pvc4.PVC4('../data_derived/crcns-pvc4', 
                            nt=32, 
                            nx=64,
                            ny=64,
                            split='report',
+                           single_cell=0,
                            )
 
-        traintune_seq = {'../data_derived/crcns-pvc4/Nat/r0206B/test.review.clown.10sec.imsm':
-                        np.zeros(707)}
-        reportset_seq = {'../data_derived/crcns-pvc4/Nat/r0206B/test.review.clown.10sec.imsm':
-                        np.zeros(707)}
+        traintune_paths = {s['images_path'] for s in traintune.sequence}
+        reportset_paths = {s['images_path'] for s in reportset.sequence}
+
+        self.assertEqual(len(traintune_paths), 5)
+        self.assertEqual(len(reportset_paths), 1)
+        self.assertEqual(len(traintune_paths.intersection(reportset_paths)), 0)
+
+        # This one has a shared reportset
+        traintune = pvc4.PVC4('../data_derived/crcns-pvc4', 
+                           nt=32, 
+                           nx=64,
+                           ny=64,
+                           split='traintune',
+                           single_cell=6,
+                           )
+        reportset = pvc4.PVC4('../data_derived/crcns-pvc4', 
+                           nt=32, 
+                           nx=64,
+                           ny=64,
+                           split='report',
+                           single_cell=6,
+                           )
+        traintune_paths = {s['images_path'] for s in traintune.sequence}
+        reportset_paths = {s['images_path'] for s in reportset.sequence}
+
+        self.assertEqual(len(traintune_paths), 2)
+        self.assertEqual(len(reportset_paths), 1)
+        assert len(traintune_paths.intersection(reportset_paths)) == 1
+
+        traintune_seq = {'../data_derived/crcns-pvc4/Nat/r0214A/test.review.mountlake.20_pix.50sec.imsm':
+                        np.zeros(3600, dtype=np.bool)}
+        reportset_seq = {'../data_derived/crcns-pvc4/Nat/r0214A/test.review.mountlake.20_pix.50sec.imsm':
+                        np.zeros(3600, dtype=np.bool)}
 
         for s in traintune.sequence:
             if s['images_path'] in traintune_seq:
-                traintune_seq[s['images_path']][s['start_spktime']:s['end_spktime']] = 1
+                traintune_seq[s['images_path']][s['start_spktime']:s['end_spktime']] = True
 
         for s in reportset.sequence:
             if s['images_path'] in reportset_seq:
-                reportset_seq[s['images_path']][s['start_spktime']:s['end_spktime']] = 1
+                reportset_seq[s['images_path']][s['start_spktime']:s['end_spktime']] = True
 
-        self.assertEqual(np.sum(traintune_seq['../data_derived/crcns-pvc4/Nat/r0206B/test.review.clown.10sec.imsm']), 0)
-        self.assertGreater(np.sum(reportset_seq['../data_derived/crcns-pvc4/Nat/r0206B/test.review.clown.10sec.imsm']), 0)
+        self.assertEqual(np.sum(
+            traintune_seq['../data_derived/crcns-pvc4/Nat/r0214A/test.review.mountlake.20_pix.50sec.imsm'] & 
+            reportset_seq['../data_derived/crcns-pvc4/Nat/r0214A/test.review.mountlake.20_pix.50sec.imsm']), 0)
+
 
     def test_train(self):
         loader = pvc4.PVC4('../data_derived/crcns-pvc4', 

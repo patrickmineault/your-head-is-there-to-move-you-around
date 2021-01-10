@@ -123,6 +123,7 @@ class MT2(torch.utils.data.Dataset):
                 'report': [9],
                 'traintune': [0, 1, 2, 3, 4, 5, 6, 7, 8],
             }
+            nblocks = 10
             
             n = 0
             nskip = nt
@@ -155,7 +156,7 @@ class MT2(torch.utils.data.Dataset):
                         # print("nan")
                         continue
 
-                    if (int(n / block_size) % block_size in splits[split]):
+                    if (int(n / block_size) % nblocks in splits[split]):
                         sequence.append({
                             'images_path': experiment['images_path'],
                             'start_frame': start_time - self.nframedelay - self.ntau + 2,
