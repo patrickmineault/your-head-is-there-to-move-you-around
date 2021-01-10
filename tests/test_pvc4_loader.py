@@ -67,6 +67,7 @@ class TestPvc4Loader(unittest.TestCase):
     def test_report(self):
         _ = pvc4.PVC4('../data_derived/crcns-pvc4', nt=32, split='report')
 
+    @unittest.skip("Slow")
     def test_v2(self):
         for i in range(123):
             print(i)

@@ -12,7 +12,7 @@ from fmri_models import (get_dataset,
                          preprocess_data,
                          get_projection_matrix)
 
-from research_code.cka_step3 import cka
+from research_code.cka_step4 import cka
 
 import torch
 
