@@ -196,14 +196,15 @@ class MT2(torch.utils.data.Dataset):
         ims = cache[tgt['images_path']]
         ims = ims[tgt['start_frame']:tgt['end_frame'], :, :].astype(np.float32)
         X = np.stack([ims, ims, ims], axis=0)
-
+f.
         if self.nx is not None:
             X = F.interpolate(torch.tensor(X), 
                              [self.nx, self.ny], 
                              align_corners=False,
                              mode='bilinear')
 
-        X = (X - 40.0) / 40.0
+        # Mean and std for ct0001_arg0466d_128.mat
+        X = (X - 115.0) / 59.0
 
         # Create a mask from the electrode range
         M = np.zeros((self.total_electrodes), dtype=np.bool)

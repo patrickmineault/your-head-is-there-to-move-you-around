@@ -1,5 +1,5 @@
 from modelzoo import xception, separable_net, gabor_pyramid, monkeynet
-from loaders import pvc1, pvc2, pvc4
+from loaders import pvc1, pvc2, pvc4, mt2
 
 import argparse
 import datetime
@@ -71,22 +71,41 @@ def get_dataset(args):
         trainset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-pvc4'), 
                                     split='train', 
                                     nt=32, 
-                                    nx=args.image_size + 4,
-                                    ny=args.image_size + 4,
-                                    ntau=9, 
+                                    nx=args.image_size,
+                                    ny=args.image_size,
+                                    ntau=10, 
                                     nframedelay=0,
                                     single_cell=args.single_cell)
 
         tuneset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-pvc4'), 
                                 split='tune', 
                                 nt=32,
-                                nx=args.image_size + 4,
-                                ny=args.image_size + 4,
-                                ntau=9,
+                                nx=args.image_size,
+                                ny=args.image_size,
+                                ntau=10,
                                 nframedelay=0,
                                 single_cell=args.single_cell)
-        transform = transforms.RandomCrop(args.image_size)
-        # transform = lambda x: x
+        transform = lambda x:x
+        sz = args.image_size
+    elif args.dataset == 'mt2':
+        trainset = mt2.MT2(os.path.join(args.data_root, 'crcns-mt2'), 
+                                    split='train', 
+                                    nt=32, 
+                                    nx=args.image_size,
+                                    ny=args.image_size,
+                                    ntau=10, 
+                                    nframedelay=0,
+                                    single_cell=args.single_cell)
+
+        tuneset = mt2.MT2(os.path.join(args.data_root, 'crcns-mt2'), 
+                                split='tune', 
+                                nt=32,
+                                nx=args.image_size,
+                                ny=args.image_size,
+                                ntau=10,
+                                nframedelay=0,
+                                single_cell=args.single_cell)
+        transform = lambda x:x
         sz = args.image_size
     return trainset, tuneset, transform, sz
 
@@ -216,6 +235,14 @@ def get_subnet(args, start_size):
     elif args.submodel == 'gaborpyramid3d':
         subnet = nn.Sequential(
             gabor_pyramid.GaborPyramid3d(4),
+            transforms.Normalize(2.2, 2.2)
+        )
+        threed = True
+        sz = start_size
+        nfeats = args.nfeats
+    elif args.submodel == 'gaborpyramid3d_tiny':
+        subnet = nn.Sequential(
+            gabor_pyramid.GaborPyramid3d(2),
             transforms.Normalize(2.2, 2.2)
         )
         threed = True
@@ -509,7 +536,7 @@ if __name__ == "__main__":
     parser.add_argument("--load_conv1_weights", default='', help="Load conv1 weights in .npy format")
     parser.add_argument("--load_ckpt", default='', help="Load checkpoint")
     parser.add_argument("--dataset", default='pvc4', help='Dataset (currently pvc1, pvc2 or pvc4)')
-    parser.add_argument("--data_root", default='./data', help='Data path')
+    parser.add_argument("--data_root", default='./data_derived', help='Data path')
     parser.add_argument("--output_dir", default='./models', help='Output path for models')
     
     args = parser.parse_args()

@@ -298,6 +298,8 @@ class PVC4(torch.utils.data.Dataset):
         if self.total_electrodes == 1:
             print(f"Loaded cell {self.sequence[-1]['cellid']}")
 
+        self.root = root
+
     def __getitem__(self, idx):
         # Load a single segment of length idx from disk.
         global cache
@@ -305,11 +307,21 @@ class PVC4(torch.utils.data.Dataset):
 
         # The images are natively different sizes, grayscale.
         
+        # Mean and standard deviation vary widely across the image and across 
+        # sequences. We normalize against the mean of means and standard 
+        # deviations across images.
+        if self.root.contains('pvc4'):
+            mm, ss, infill = 54, 43, 20
+            
+        elif self.root.contains('v2'):
+            mm, ss, infill = 73, 47, 73
+
         if tgt['images_path'] not in cache:
             X_ = _loadimfile(tgt['images_path'])
             if X_.shape[1] < tgt['iconside']:
-                X = 20 * np.ones((X_.shape[0], tgt['iconside'], tgt['iconside']), dtype=np.uint8)
-                delta = (X.shape[1] - X_.shape) // 2
+                # The top left background is systematically at value 20.0
+                X = infill * np.ones((X_.shape[0], tgt['iconside'], tgt['iconside']), dtype=np.uint8)
+                delta = (X.shape[1] - X_.shape[1]) // 2
                 assert delta > 0
                 rg = slice(delta, delta + X_.shape[1])
                 X[:, rg, rg] = X_
@@ -327,7 +339,7 @@ class PVC4(torch.utils.data.Dataset):
                              align_corners=False,
                              mode='bilinear')
 
-        X = (X - 40.0) / 40.0
+        X = (X - mm) / ss
 
         # Create a mask from the electrode range
         M = np.zeros((self.total_electrodes), dtype=np.bool)
