@@ -8,7 +8,7 @@ import sklearn.random_projection
 import tables
 from tqdm import tqdm
 
-from loaders import vim2, pvc4
+from loaders import vim2, pvc4, mt2
 from modelzoo import gabor_pyramid, separable_net
 from modelzoo.motionnet import MotionNet
 from modelzoo.slowfast_wrapper import SlowFast
@@ -200,7 +200,7 @@ def preprocess_data(loader,
                         try:
                             fit_layer = aggregator(activations[layer]).cpu().detach().numpy()
                         except AssertionError:
-                            # This is because the output is too small
+                            # This is because the output is too small, so the aggregator doesn't work.
                             continue
                         
                         if outputs is None:
@@ -286,6 +286,16 @@ def get_dataset(args, fold):
                              ntau=10, 
                              nframedelay=0,
                              single_cell=int(args.subset))
+    elif args.dataset == 'mt2':
+        data = mt2.MT2(os.path.join(args.data_root, 'crcns-mt2'), 
+                            split=fold, 
+                             nt=1, 
+                             nx=112,
+                             ny=112,
+                             ntau=10, 
+                             nframedelay=0,
+                             single_cell=int(args.subset))
+
     else:
         raise NotImplementedError(f"{args.dataset} implemented")
 
