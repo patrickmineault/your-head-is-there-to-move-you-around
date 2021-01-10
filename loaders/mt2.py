@@ -196,7 +196,7 @@ class MT2(torch.utils.data.Dataset):
         ims = cache[tgt['images_path']]
         ims = ims[tgt['start_frame']:tgt['end_frame'], :, :].astype(np.float32)
         X = np.stack([ims, ims, ims], axis=0)
-f.
+
         if self.nx is not None:
             X = F.interpolate(torch.tensor(X), 
                              [self.nx, self.ny], 
