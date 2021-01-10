@@ -500,7 +500,7 @@ def main(args):
                         tune_loss = 0
                         m = 0
 
-                if schedule is not None:
+                if scheduler is not None:
                     scheduler.step()
 
                 n += args.batch_size
