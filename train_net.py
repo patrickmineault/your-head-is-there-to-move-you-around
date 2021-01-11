@@ -553,6 +553,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--no_sample", default=False, help='Whether to use a normal gaussian layer rather than a sampled one', action='store_true')
     parser.add_argument("--no_wandb", default=False, help='Skip using W&B', action='store_true')
+    parser.add_argument("--skip_existing", default=True, help='Skip existing runs', action='store_true')
     
     parser.add_argument("--load_conv1_weights", default='', help="Load conv1 weights in .npy format")
     parser.add_argument("--load_ckpt", default='', help="Load checkpoint")

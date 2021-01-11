@@ -22,6 +22,6 @@ do
             --pca 500 \
             --no_save
         # Clear cache.
-        rm cache/*
+        rm -f cache/*
     done
 done
