@@ -20,7 +20,8 @@ do
             --aggregator downsample \
             --aggregator_sz 8 \
             --pca 500 \
-            --no_save
+            --no_save \
+            --skip_existing
         # Clear cache.
         rm -f cache/*
     done

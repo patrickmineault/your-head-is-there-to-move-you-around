@@ -18,6 +18,41 @@ import torch
 
 ff = .1
 
+def save_to_wandb(results, weights, args, offline=False):
+    if offline:
+        os.environ["WANDB_MODE"] = "dryrun"
+    else:
+        os.environ["WANDB_MODE"] = "run"
+
+    run = wandb.init(project="train_fmri_convex.py", 
+                    config=vars(args),
+                    reinit=True)
+    config = wandb.config
+    
+    # This allows the info to be visible in the dashboard
+    wandb.log(results)
+
+    # This saves the whole results (no histogramming). Has to happen after log.
+    wandb.run.summary.update(results)
+
+    # Also save the best weights.
+    if not args.no_save:
+        weight_path = os.path.join(wandb.run.dir, 'optimal_weights.pkl')
+        with open(weight_path, 'wb') as f:
+            pickle.dump(weights, f)
+    
+        # These weights are big, only save if necessary
+        wandb.save(weight_path)
+
+        results['weight_path'] = weight_path
+        
+    out_path = os.path.join(wandb.run.dir, 'results.pkl')
+    with open(out_path, 'wb') as f:
+        pickle.dump(results, f)
+
+    wandb.save(out_path)
+    run.finish()
+
 def compute_layer(trainloader, reportloader, feature_model, aggregator, 
                   activations, metadata, args):
     print(f"Processing layer {args.layer}")
@@ -141,39 +176,37 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
         'fit_time': time.time() - t0,
         'cka_report': cka_report.item(),
         'layer': args.layer,
+        'subset': args.subset,
     }
 
     if not args.no_wandb:
-        run = wandb.init(project="train_fmri_convex.py", 
-                         config=vars(args),
-                         reinit=True)
-        config = wandb.config
-        
-        # This allows the info to be visible in the dashboard
-        wandb.log(results)
-
-        # This saves the whole results (no histogramming). Has to happen after log.
-        wandb.run.summary.update(results)
-
-        # Also save the best weights.
-        if not args.no_save:
-            weight_path = os.path.join(wandb.run.dir, 'optimal_weights.pkl')
-            with open(weight_path, 'wb') as f:
-                pickle.dump(weights, f)
-        
-            # These weights are big, only save if necessary
-            wandb.save(weight_path)
-
-            results['weight_path'] = weight_path
-            
-        out_path = os.path.join(wandb.run.dir, 'results.pkl')
-        with open(out_path, 'wb') as f:
-            pickle.dump(results, f)
-
-        wandb.save(out_path)
-        run.finish()
+        try:
+            save_to_wandb(results, weights, args, offline=False)
+        except wandb.errors.error.UsageError:
+            print(">>> Could not save to cloud, using offline save this once.")
+            save_to_wandb(results, weights, args, offline=True)
     else:
         print(results)
+
+def check_existing(args, metadata):
+    api = wandb.Api()
+
+    runs = api.runs("pmin/train_fmri_convex.py", 
+                    {"$and": 
+                    [
+                        {"config.exp_name": args.exp_name},
+                        {"config.dataset": args.dataset},
+                        {"config.aggregator": args.aggregator},
+                        {"config.aggregator_sz": args.aggregator_sz},
+                        {"config.pca": args.pca},
+                        {"config.features": args.features},
+                        {"config.subset": args.subset},
+                        {"state": "finished"},
+                    ]
+                    }
+                )
+    return len(runs) >= metadata['nlayers']
+
 
 def main(args):
     print("Fitting model")
@@ -207,6 +240,13 @@ def main(args):
 
     args.ntau = trainset.ntau
     feature_model, activations, metadata = get_feature_model(args)
+
+    if args.skip_existing:
+        exists = check_existing(args, metadata)
+        if exists:
+            print(">>> Run already exists, skipping")
+            return
+
     aggregator = get_aggregator(metadata, args)
     feature_model.to(device=device)
 
@@ -230,6 +270,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--no_wandb", default=False, help='Skip using W&B', action='store_true')
     parser.add_argument("--no_save", default=False, help='Skip saving weights', action='store_true')
+    parser.add_argument("--skip_existing", default=False, help='Skip existing runs', action='store_true')
     
     parser.add_argument("--dataset", default='vim2', help='Dataset (currently vim2, pvc4)')
     parser.add_argument("--subset", default='s1', help='Either subject name or neuron num')
