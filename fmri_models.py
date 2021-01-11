@@ -13,7 +13,7 @@ from modelzoo import gabor_pyramid, separable_net
 from modelzoo.motionnet import MotionNet
 from modelzoo.slowfast_wrapper import SlowFast
 from modelzoo.shiftnet import ShiftNet
-from modelzoo.monkeynet import ShallowNet
+from modelzoo.monkeynet import ShallowNet, V1Net
 
 import torch
 from torch import nn
@@ -461,6 +461,19 @@ def get_feature_model(args):
 
         metadata = {'sz': 112,
                     'threed': True}
+    elif args.features == 'V1Net':
+        path = os.path.join(args.ckpt_root, 'model.ckpt-1259280-2021-01-10 17-09-33.770070.pt')
+        checkpoint = torch.load(path)
+
+        subnet_dict = extract_subnet_dict(checkpoint)
+
+        model = V1Net()
+        model.load_state_dict(subnet_dict)
+        layers = [x for _, x in model.layers]
+
+        metadata = {'sz': 112,
+                    'threed': True}
+
     else:
         raise NotImplementedError('Model not implemented yet')
 
