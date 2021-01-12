@@ -3,7 +3,7 @@ set -e
 
 # TODO: figure out what to do about SlowFast_Slow and SlowFast_Fast
 #models=(gaborpyramid3d ShallowMonkeyNet_pvc1 ShallowMonkeyNet_pvc4 resnet18 MotionNet ShiftNet Slow I3D r3d_18 mc3_18 r2plus1d_18)
-models=(MotionNet ShiftNet Slow I3D r3d_18 mc3_18 r2plus1d_18 resnet18)
+models=(Slow I3D r3d_18 mc3_18 r2plus1d_18 resnet18)
 for model in "${models[@]}";
 do
     for subset in {0..24};
@@ -16,7 +16,7 @@ do
             --batch_size 8 \
             --ckpt_root /storage/checkpoints \
             --data_root /storage/data_derived \
-            --slowfast_root ../slowfast \
+            --slowfast_root /workspace/slowfast \
             --aggregator downsample \
             --aggregator_sz 8 \
             --pca 500 \
