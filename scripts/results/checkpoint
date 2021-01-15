@@ -1,0 +1,2 @@
+model_checkpoint_path: "MEM_polar_8dirs8speeds_.8to3.8_32x32x6_rf6_nk128_valid_5"
+all_model_checkpoint_paths: "MEM_polar_8dirs8speeds_.8to3.8_32x32x6_rf6_nk128_valid_5"
