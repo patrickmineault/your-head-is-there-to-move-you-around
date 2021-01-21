@@ -8,6 +8,8 @@ import matplotlib.image
 import numpy as np
 import os
 import pandas as pd
+import scipy
+import scipy.signal
 import shutil
 import tables
 
@@ -47,7 +49,18 @@ def derive_v2(args):
     for i in range (7, 20):
         os.system(f'cp -r "{full_path}/V2Data{i}/NatRev" "{out_path}"')
 
+    # Remove 4 problematic cases with too many nans
+    os.system(f'rm -rf "{out_path}/e0052"')
+    os.system(f'rm -rf "{out_path}/r0229B"')
+    os.system(f'rm -rf "{out_path}/r0230C"')
+    os.system(f'rm -rf "{out_path}/z0109"')
+
 def derive_vim2(args):
+
+    k = np.array([ 0.08587235, -0.12966623, -0.29163768,  0.34957006,  
+                             1., -0.29865622, -0.49128265])
+
+
     for subject in [1, 2, 3]:
         print(f"Subject {subject}")
         f = tables.open_file(f'{args.data_root}/crcns-vim2/VoxelResponses_subject{subject}.mat')
@@ -56,6 +69,7 @@ def derive_vim2(args):
         Ya = f.get_node('/rva')[:]
         max_r2 = get_max_r2(Ya)
         
+    
         nodes = f.list_nodes('/roi')
         rois = {}
         for node in nodes:
@@ -63,12 +77,39 @@ def derive_vim2(args):
         f.close()
         
         mask = (~np.isnan(Yv)).all(1) & (~np.isnan(Yt)).all(1)
-        
+
         h5file = tables.open_file(f'{args.output_dir}/crcns-vim2/VoxelResponses_subject{subject}.mat', mode="w", title="Response file")
+        h5file.create_array('/', 'rva', Ya, "Validation responses")
         h5file.create_array('/', 'rv', Yv, "Validation responses")
         h5file.create_array('/', 'rt', Yt, "Training responses")
         h5file.create_array('/', 'maxr2', max_r2, "Max R^2 for this dataset")
         h5file.create_array('/', 'mask', mask, "Master mask")
+
+        assert Yv.shape[0] % 16 == 0
+        for i in range(16):
+            # There's a weird interaction between convolve2d and nans, so we wipe 
+            # out the nans beforehand here.
+            rg = range((Yv.shape[0] // 16) * i, (Yv.shape[0] // 16) * (i + 1))
+            Yvd = scipy.signal.convolve2d(np.nan_to_num(Yv[rg, :]), k.reshape((1, -1)), 'same')
+            Yvd[:, :4] = 0
+            Yvd[:, -4:] = 0
+
+            Ytd = scipy.signal.convolve2d(np.nan_to_num(Yt[rg, :]), k.reshape((1, -1)), 'same')
+            Ytd[:, :4] = 0
+            Ytd[:, -4:] = 0
+            if i == 0:
+                Yvd_ = h5file.create_earray('/', 
+                                            f'rvd', 
+                                            obj=Yvd, 
+                                            expectedrows=Yv.shape[0])
+                Ytd_ = h5file.create_earray('/', 
+                                            f'rtd', 
+                                            obj=Ytd, 
+                                            expectedrows=Yt.shape[0])
+            else:
+                Yvd_.append(Yvd)
+                Ytd_.append(Ytd)
+
         groups = h5file.create_group('/', 'roi')
         for key, node in rois.items():
             h5file.create_array(groups, key, node, "ROI")
@@ -254,7 +295,7 @@ if __name__ == "__main__":
     
     parser.add_argument("--dataset", help='Dataset')
     parser.add_argument("--data_root", default='./data', help='Data path')
-    parser.add_argument("--output_dir", default='./data_derived', help='Output path')
+    parser.add_argument("--output_dir", default='/mnt/e/data_derived', help='Output path')
 
     args = parser.parse_args()
     main(args)

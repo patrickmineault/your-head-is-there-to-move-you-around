@@ -1,10 +1,12 @@
 from modelzoo import xception, separable_net, gabor_pyramid, monkeynet
-from loaders import pvc1, pvc2, pvc4, mt2
+from loaders import pvc1, pvc4, mt2
+from fmri_models import extract_subnet_dict
 
 import argparse
 import datetime
 import itertools
 import os
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
@@ -54,19 +56,6 @@ def get_dataset(args):
 
         transform = lambda x: x
         sz = 112
-    elif args.dataset == 'pvc2':
-        trainset = pvc2.PVC2(os.path.join(args.data_root, 'pvc2'), 
-                                    split='train', 
-                                    nt=32, 
-                                    ntau=9, 
-                                    nframedelay=0)
-
-        tuneset = pvc2.PVC2(os.path.join(args.data_root, 'pvc2'), 
-                                split='tune', 
-                                nt=32,
-                                ntau=9,
-                                nframedelay=0)
-        sz = 12
     elif args.dataset == 'pvc4':
         trainset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-pvc4'), 
                                     split='train', 
@@ -75,7 +64,7 @@ def get_dataset(args):
                                     ny=args.image_size,
                                     ntau=10, 
                                     nframedelay=0,
-                                    single_cell=args.single_cell)
+                                    single_cell=int(args.subset))
 
         tuneset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-pvc4'), 
                                 split='tune', 
@@ -84,7 +73,7 @@ def get_dataset(args):
                                 ny=args.image_size,
                                 ntau=10,
                                 nframedelay=0,
-                                single_cell=args.single_cell)
+                                single_cell=int(args.subset))
         transform = lambda x:x
         sz = args.image_size
     elif args.dataset == 'mt2':
@@ -95,7 +84,7 @@ def get_dataset(args):
                                     ny=args.image_size,
                                     ntau=10, 
                                     nframedelay=1,
-                                    single_cell=args.single_cell)
+                                    single_cell=int(args.subset))
 
         tuneset = mt2.MT2(os.path.join(args.data_root, 'crcns-mt2'), 
                                 split='tune', 
@@ -104,18 +93,18 @@ def get_dataset(args):
                                 ny=args.image_size,
                                 ntau=10,
                                 nframedelay=1,
-                                single_cell=args.single_cell)
+                                single_cell=int(args.subset))
         transform = lambda x:x
         sz = args.image_size
     elif args.dataset == 'v2':
         trainset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-v2'), 
-                                    split='train', 
-                                    nt=32, 
+                                    split='train',
+                                    nt=32,
                                     nx=args.image_size,
                                     ny=args.image_size,
                                     ntau=10, 
                                     nframedelay=0,
-                                    single_cell=args.single_cell)
+                                    single_cell=int(args.subset))
 
         tuneset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-v2'), 
                                 split='tune', 
@@ -124,9 +113,67 @@ def get_dataset(args):
                                 ny=args.image_size,
                                 ntau=10,
                                 nframedelay=0,
-                                single_cell=args.single_cell)
+                                single_cell=int(args.subset))
         transform = lambda x:x
         sz = args.image_size
+    elif args.dataset == 'v2-mt':
+        trainset0 = pvc4.PVC4(os.path.join(args.data_root, 'crcns-v2'), 
+                                    split='train', 
+                                    nt=32, 
+                                    nx=args.image_size,
+                                    ny=args.image_size,
+                                    ntau=10, 
+                                    nframedelay=0,
+                                    single_cell=args.subset)
+
+        tuneset0 = pvc4.PVC4(os.path.join(args.data_root, 'crcns-v2'), 
+                                split='tune', 
+                                nt=32,
+                                nx=args.image_size,
+                                ny=args.image_size,
+                                ntau=10,
+                                nframedelay=0,
+                                single_cell=args.subset)
+
+        trainset1 = mt2.MT2(os.path.join(args.data_root, 'crcns-mt2'), 
+                                    split='train', 
+                                    nt=32, 
+                                    nx=args.image_size,
+                                    ny=args.image_size,
+                                    ntau=10, 
+                                    nframedelay=1,
+                                    single_cell=args.subset)
+
+        tuneset1 = mt2.MT2(os.path.join(args.data_root, 'crcns-mt2'), 
+                                split='tune', 
+                                nt=32,
+                                nx=args.image_size,
+                                ny=args.image_size,
+                                ntau=10,
+                                nframedelay=1,
+                                single_cell=args.subset)
+
+        # We have to do some patching so we can mush the datasets together.
+        total_electrodes = trainset0.total_electrodes + trainset1.total_electrodes
+        trainset1.offset = trainset0.total_electrodes
+        tuneset1.offset = trainset1.offset
+
+        trainset0.total_electrodes = total_electrodes
+        trainset1.total_electrodes = total_electrodes
+        tuneset0.total_electrodes = total_electrodes
+        tuneset1.total_electrodes = total_electrodes
+
+        trainset = torch.utils.data.ConcatDataset([trainset0, trainset1])
+        tuneset = torch.utils.data.ConcatDataset([tuneset0, tuneset1])
+
+        trainset.total_electrodes = total_electrodes
+        trainset.ntau = 10
+        tuneset.total_electrodes = total_electrodes
+        tuneset.ntau = 10
+
+        transform = lambda x:x
+        sz = args.image_size
+
     return trainset, tuneset, transform, sz
 
 
@@ -240,11 +287,25 @@ def get_subnet(args, start_size):
         threed = True
         sz = ((start_size + 1) // 2 + 1) // 2
         nfeats = args.nfeats
-    if args.submodel.startswith('v1net'):
+    elif args.submodel.startswith('v1net'):
         subnet = monkeynet.V1Net()
         threed = True
         sz = ((start_size + 1) // 2 + 1) // 2
         nfeats = args.nfeats
+
+    elif args.submodel == 'dorsalnet':
+        subnet = monkeynet.DorsalNet()
+        # Lock in the shallow net features.
+        path = Path(args.ckpt_root) / 'model.ckpt-8700000-2021-01-03 22-34-02.540594.pt'
+        subnet.s1.requires_grad_(False)
+        checkpoint = torch.load(str(path))
+        subnet_dict = extract_subnet_dict(checkpoint)
+        subnet.s1.load_state_dict(subnet_dict)
+
+        threed = True
+        sz = ((start_size + 1) // 2 + 1) // 2
+        nfeats = 32
+
     elif args.submodel == 'gaborpyramid2d':
         subnet = nn.Sequential(
             gabor_pyramid.GaborPyramid(4),
@@ -336,7 +397,7 @@ def main(args):
 
     layers = get_all_layers(net)
 
-    if args.single_cell == -1:
+    if args.subset == -1:
         # Make sure to scale things properly because of double counting.
         optimizer = optim.Adam([
             {'params': net.inner_parameters, 'lr': args.learning_rate_outer / np.sqrt(trainset.total_electrodes)},
@@ -547,7 +608,7 @@ if __name__ == "__main__":
     parser.add_argument("--nfeats", default=64, type=int, help='Number of features')
     parser.add_argument("--num_blocks", default=0, type=int, help="Num Xception blocks")
     parser.add_argument("--warmup", default=5000, type=int, help="Number of iterations before unlocking tuning RFs and filters")
-    parser.add_argument("--single_cell", default=-1, type=int, help="Fit data to a single cell with this index if true")
+    parser.add_argument("--subset", default="-1", type=str, help="Fit data to a specific subset of the data")
     parser.add_argument("--ckpt_frequency", default=2500, type=int, help="Checkpoint frequency")
     parser.add_argument("--print_frequency", default=100, type=int, help="Print frequency")
 
@@ -557,8 +618,9 @@ if __name__ == "__main__":
     
     parser.add_argument("--load_conv1_weights", default='', help="Load conv1 weights in .npy format")
     parser.add_argument("--load_ckpt", default='', help="Load checkpoint")
-    parser.add_argument("--dataset", default='pvc4', help='Dataset (currently pvc1, pvc2 or pvc4)')
+    parser.add_argument("--dataset", default='pvc4', help='Dataset (currently pvc1, pvc4, mt2, v2, or v2-mt)')
     parser.add_argument("--data_root", default='./data_derived', help='Data path')
+    parser.add_argument("--ckpt_root", default='./checkpoints', help='Data path')
     parser.add_argument("--output_dir", default='./models', help='Output path for models')
     
     args = parser.parse_args()

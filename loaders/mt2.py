@@ -48,6 +48,7 @@ class MT2(torch.utils.data.Dataset):
                  nframestart=15,
                  split='train',
                  single_cell=-1,
+                 offset=0,
                  ):
 
         block_len = 6  # in seconds
@@ -76,10 +77,12 @@ class MT2(torch.utils.data.Dataset):
         cells = sorted(cells)
 
         if single_cell != -1:
-            cells = [cells[single_cell]]
+            if single_cell == 'coreset':
+                # TODO(pmin): Fill in the cell numbers based on motion selectivity.
+                cells = [cells[i] for i in range(len(cells)) if i % 3 != 0]
+            else:
+                cells = [cells[single_cell]]
 
-        images = []
-        spktimes = []
 
         cell_info = collections.OrderedDict()
         i = 0
@@ -89,6 +92,8 @@ class MT2(torch.utils.data.Dataset):
             assert spikes.ndim == 1
             cellid = cell.split('/')[-1][:6]
             framecount = len(f.get_node('/rawStims'))
+            traintune_range = f.get_node('/ranges/crange')[:].ravel().astype(np.int) - 1
+            report_range = f.get_node('/ranges/vrange')[:].ravel().astype(np.int) - 1
             f.close()
 
             info = {
@@ -96,6 +101,8 @@ class MT2(torch.utils.data.Dataset):
                     'spktimes': spikes,
                     'ntrainingframes': framecount,
                     'images_path': cell,
+                    'traintune_range': traintune_range,
+                    'report_range': report_range,
                     'nrepeats': 1,
                     }
 
@@ -108,7 +115,7 @@ class MT2(torch.utils.data.Dataset):
         sequence = []
         n_electrodes = 0
         
-        for j, cell_files in enumerate(cell_info.values()):
+        for cell_files in cell_info.values():
             ntraining_frames = sum([x['ntrainingframes'] for x in cell_files])
             
             if ntraining_frames < min_seconds * framerate:
@@ -116,7 +123,6 @@ class MT2(torch.utils.data.Dataset):
                 print(ntraining_frames)
                 print(cell_files[0]['cellid'])
                 raise Exception("less than 1 minute of data")
-                continue
 
             splits = {'train': [0, 1, 2, 3, 5, 6, 7, 8],
                 'tune': [4],
@@ -139,26 +145,37 @@ class MT2(torch.utils.data.Dataset):
             mean_spk = total_spikes / total_frames
 
             for i, experiment in enumerate(cell_files):
-                nframes = len(experiment['spktimes'])
+                if split == 'report':
+                    rg = experiment['report_range']
+                else:
+                    rg = experiment['traintune_range']
+
+                assert np.all(np.diff(rg) == 1)
+
                 all_spks = np.array(experiment['spktimes'])
 
-                for start_time in range(self.nframestart, nframes, nskip):
-                    if start_time + nskip + 1 > nframes:
+                for start_time in range(rg[0] + self.nframestart, rg[-1] + 1, nskip):
+                    
+                    if start_time + nskip + 1 > rg[-1] + 1:
                         # Incomplete frame.
                         # print("incomplete frame")
                         continue
 
-                    end_time = min((nframes, start_time + nskip + 1))
+                    
+                    end_time = min((rg[-1] + 1, start_time + nskip + 1))
 
                     spk = np.array(experiment['spktimes'][start_time+1:end_time])
+
                     if np.any(spk < 0) or np.any(np.isnan(spk)):
                         # Skip this chunk
                         # print("nan")
                         continue
 
-                    if (int(n / block_size) % nblocks in splits[split]):
+                    if ((split == 'report') or 
+                        (split != 'report' and int(n / block_size) % nblocks in splits[split])):
                         sequence.append({
                             'images_path': experiment['images_path'],
+                            'images_rg': rg,
                             'start_frame': start_time - self.nframedelay - self.ntau + 2,
                             'end_frame': end_time - self.nframedelay,
                             'spikes': spk,
@@ -176,6 +193,7 @@ class MT2(torch.utils.data.Dataset):
         
         self.sequence = sequence
         self.total_electrodes = n_electrodes
+        self.offset = offset
 
         if self.total_electrodes == 0:
             raise Exception("Didn't find any data")
@@ -209,14 +227,14 @@ class MT2(torch.utils.data.Dataset):
 
         # Create a mask from the electrode range
         M = np.zeros((self.total_electrodes), dtype=np.bool)
-        M[tgt['cellnum']] = True
+        M[tgt['cellnum'] + self.offset] = True
 
         Y = np.zeros((self.total_electrodes, self.nt))
-        Y[tgt['cellnum'], :] = tgt['spikes']
+        Y[tgt['cellnum'] + self.offset, :] = tgt['spikes']
 
         w = np.sqrt(tgt['nrepeats'] / max(tgt['mean_spk'], .1))
         W = np.zeros((self.total_electrodes))
-        W[tgt['cellnum']] = w # max(w, .1)
+        W[tgt['cellnum'] + self.offset] = w # max(w, .1)
 
         return (X, M, W, Y)
 

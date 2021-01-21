@@ -137,10 +137,16 @@ class PVC4(torch.utils.data.Dataset):
         cells = sorted(cells)
 
         if single_cell != -1:
-            cells = [cells[single_cell]]
+            if single_cell == 'coreset' and 'v2' in root:
+                # Use every 4th cell to match the size of MT data approximately.
+                cells = cells[::4]
+            else:
+                cells = [cells[single_cell]]
 
-        images = []
-        spktimes = []
+        if len(cells) > 100:
+            # Use a quarter of the cells.
+            cells = cells[::4]
+
 
         cell_info = collections.OrderedDict()
         i = 0
@@ -181,7 +187,7 @@ class PVC4(torch.utils.data.Dataset):
                         spikes = np.array(data.iloc[:, 2].tolist())
 
                     stimpath = os.path.join(os.path.dirname(path), stimfile)
-                    framecount, iconsize, iconside, filetype = _openimfile(stimpath)
+                    framecount, _, iconside, _ = _openimfile(stimpath)
                     if iconside < 32:
                         print("iconside is small")
                         print(iconside)
@@ -208,7 +214,7 @@ class PVC4(torch.utils.data.Dataset):
         sequence = []
         n_electrodes = 0
         
-        for j, cell_files in enumerate(cell_info.values()):
+        for cell_files in cell_info.values():
             ntraining_frames = sum([x['ntrainingframes'] for x in cell_files])
             
             if ntraining_frames < min_seconds * framerate:
@@ -216,7 +222,6 @@ class PVC4(torch.utils.data.Dataset):
                 print(ntraining_frames)
                 print(cell_files[0]['cellid'])
                 raise Exception("less than 1 minute of data")
-                continue
 
             largest_size = max([x['iconside'] for x in cell_files])
             
@@ -254,7 +259,6 @@ class PVC4(torch.utils.data.Dataset):
             mean_spk = total_spikes / total_frames
 
             for i, experiment in enumerate(cell_files):
-                sz = experiment['iconside']
                 nframes = len(experiment['spktimes'])
                 all_spks = np.array(experiment['spktimes'])
 
@@ -325,13 +329,22 @@ class PVC4(torch.utils.data.Dataset):
         if tgt['images_path'] not in cache:
             X_ = _loadimfile(tgt['images_path'])
             if X_.shape[1] < tgt['iconside']:
-                # The top left background is systematically at value 20.0
+                # The top left background is systematically at value infill
                 X = infill * np.ones((X_.shape[0], tgt['iconside'], tgt['iconside']), dtype=np.uint8)
                 delta = (X.shape[1] - X_.shape[1]) // 2
                 assert delta > 0
                 rg = slice(delta, delta + X_.shape[1])
                 X[:, rg, rg] = X_
                 X_ = X
+
+            if X_.shape[2] >= self.nx * 2:
+                # Downsample by a factor 2x. to minimize the memory footprint
+                if X_.shape[2] % 2 == 1:
+                    X_ = X_[:, :, :-1]
+                if X_.shape[1] % 2 == 1:
+                    X_ = X_[:, :-1, :]
+                X_ = X_.reshape((X_.shape[0], X_.shape[1] // 2, 2, X_.shape[2] // 2, 2))
+                X_ = X_.mean(axis=4).mean(axis=2)
 
             cache[tgt['images_path']] = X_
 
