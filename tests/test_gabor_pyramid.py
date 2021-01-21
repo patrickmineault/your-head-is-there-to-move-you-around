@@ -67,6 +67,13 @@ class TestGaborPyramid(unittest.TestCase):
         self.assertGreater(output[7, 1].item(), output[7, 0].item())
         self.assertGreater(output[8, 2].item(), output[8, 1].item())
 
+    def test_3d_pyramid_motionless(self):
+        net = gabor_pyramid.GaborPyramid3d(nlevels=2, nt=7, motionless=True)
+        frames = torch.zeros(3, 3, 7, 9, 9)
+        X = net(frames)
+        self.assertEqual(X.shape[1], 16)
+
+
 
 if __name__ == "__main__":
     unittest.main()

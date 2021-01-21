@@ -29,6 +29,15 @@ class TestMonkeyNet(unittest.TestCase):
         X_forwarded = model.forward(X)
         self.assertEqual(X_forwarded.shape[0], 1)
 
+    def test_dorsal(self):
+        """Smoke test"""
+
+        model = monkeynet.DorsalNet()
+        X = torch.randn(1, 3, 80, 112, 112)
+        X_forwarded = model.forward(X)
+
+        self.assertEqual(X_forwarded.shape[-1], 28)
+
 
 if __name__ == '__main__':
     unittest.main()
