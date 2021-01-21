@@ -46,13 +46,15 @@ def get_dataset(args):
                                     split='train', 
                                     nt=32, 
                                     ntau=9, 
-                                    nframedelay=0)
+                                    nframedelay=0,
+                                    virtual=args.virtual)
 
         tuneset = pvc1.PVC1(os.path.join(args.data_root, 'crcns-ringach-data'), 
                                 split='tune', 
                                 nt=32,
                                 ntau=9,
-                                nframedelay=0)
+                                nframedelay=0,
+                                virtual=args.virtual)
 
         transform = lambda x: x
         sz = 112
@@ -64,7 +66,8 @@ def get_dataset(args):
                                     ny=args.image_size,
                                     ntau=10, 
                                     nframedelay=0,
-                                    single_cell=int(args.subset))
+                                    single_cell=int(args.subset),
+                                    virtual=args.virtual)
 
         tuneset = pvc4.PVC4(os.path.join(args.data_root, 'crcns-pvc4'), 
                                 split='tune', 
@@ -73,7 +76,8 @@ def get_dataset(args):
                                 ny=args.image_size,
                                 ntau=10,
                                 nframedelay=0,
-                                single_cell=int(args.subset))
+                                single_cell=int(args.subset),
+                                virtual=args.virtual)
         transform = lambda x:x
         sz = args.image_size
     elif args.dataset == 'mt2':
@@ -611,6 +615,7 @@ if __name__ == "__main__":
     parser.add_argument("--subset", default="-1", type=str, help="Fit data to a specific subset of the data")
     parser.add_argument("--ckpt_frequency", default=2500, type=int, help="Checkpoint frequency")
     parser.add_argument("--print_frequency", default=100, type=int, help="Print frequency")
+    parser.add_argument("--virtual", default="", type=str, help="Create virtual cells by transforming the inputs ("", rot or all)")
 
     parser.add_argument("--no_sample", default=False, help='Whether to use a normal gaussian layer rather than a sampled one', action='store_true')
     parser.add_argument("--no_wandb", default=False, help='Skip using W&B', action='store_true')
