@@ -63,11 +63,13 @@ class GaborPyramid3d(nn.Module):
     def __init__(self, 
                  nlevels=5,
                  nt=7,
-                 stride=1):
+                 stride=1,
+                 motionless=False):
         super(GaborPyramid3d, self).__init__()
         self.nt = nt
         self.nlevels = nlevels
         self.stride = stride
+        self.motionless = motionless
         self.setup()
 
     def setup(self):
@@ -111,6 +113,12 @@ class GaborPyramid3d(nn.Module):
                                stride=self.stride)
             magnitude = torch.sqrt((outputs ** 2)[:, ::2, :, :, :] + 
                                    (outputs ** 2)[:, 1::2, :, :, :])
+
+            if self.motionless:
+                # Add the two directions together
+                magnitude = torch.cat([(magnitude[:, 0::3, :, :, :] + magnitude[:, 2::3, :, :, :]) / 2.0,
+                                        magnitude[:, 1::3, :, :, :]], axis=1)
+
             if i == 0:
                 maps.append(magnitude)
             else:
