@@ -44,11 +44,12 @@ class PVC1(torch.utils.data.Dataset):
                  nframedelay=2,
                  nframestart=15,
                  split='train',
+                 single_cell=-1,
                  ):
 
         framerate = 30.0
 
-        if split not in ('train', 'tune', 'report'):
+        if split not in ('train', 'tune', 'report', 'traintune'):
             raise NotImplementedError('Split is set to an unknown value')
 
         if ntau + nframedelay > nframestart:
@@ -60,7 +61,7 @@ class PVC1(torch.utils.data.Dataset):
         self.ntau = ntau
         self.nframedelay = nframedelay
         self.nframestart = nframestart
-
+        self.split = split
         self.movie_info = _movie_info(root)
         self.root = root
 
@@ -69,7 +70,9 @@ class PVC1(torch.utils.data.Dataset):
             paths.append(item)
 
         paths = sorted(paths)
-        #paths = paths[:1]
+
+        if single_cell != -1:
+            paths = [paths[single_cell]]
 
         # Create a mapping from a single index to the necessary information needed to load the corresponding data
         sequence = []
@@ -79,6 +82,7 @@ class PVC1(torch.utils.data.Dataset):
         splits = {'train': [0, 1, 2, 3, 5, 6, 7, 8],
                   'tune': [4],
                   'report': [9],
+                  'traintune': [0, 1, 2, 3, 4, 5, 6, 7, 8],
                   }
 
         nblocks = 10
