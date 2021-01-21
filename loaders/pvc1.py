@@ -1,4 +1,4 @@
-from . import utils
+from . import utils, virtualize
 
 import datetime
 import glob
@@ -45,6 +45,7 @@ class PVC1(torch.utils.data.Dataset):
                  nframestart=15,
                  split='train',
                  single_cell=-1,
+                 virtual=False,
                  ):
 
         framerate = 30.0
@@ -155,6 +156,19 @@ class PVC1(torch.utils.data.Dataset):
 
             cumulative_electrodes += n_electrodes_seen
 
+        self.underlying_electrodes = cumulative_electrodes
+        if virtual:
+            transforms = virtualize.list_transformations(virtual)
+            long_seq = []
+            delta = 0
+            for t in transforms:
+                long_seq += [{'virtual_electrode_num': v['abs_electrode_num'] + delta,
+                              'transform': t, 
+                              **v} for v in sequence]
+                delta += cumulative_electrodes
+            sequence = long_seq
+            cumulative_electrodes = cumulative_electrodes * len(transforms)
+
         self.nrepeats = np.array(nrepeats)
         self.sequence = sequence
         self.total_electrodes = cumulative_electrodes
@@ -189,6 +203,13 @@ class PVC1(torch.utils.data.Dataset):
         # https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html
         X = (imgs.astype(np.float32) - 
              np.array([83, 81, 73], dtype=np.float32).reshape((3, 1, 1, 1))) / 64.0
+
+        if 'transform' in tgt:
+            X = virtualize.transform(torch.tensor(X), tgt['transform'])
+            abs_electrode_num = tgt['virtual_electrode_num']
+        else:
+            abs_electrode_num = tgt['abs_electrode_num']
+
         mat_file = self.mat_files[tgt['key']]
         
         batch = mat_file['pepANA']['listOfResults'][tgt['result']]
@@ -213,12 +234,12 @@ class PVC1(torch.utils.data.Dataset):
 
         # Create a mask from the electrode range
         m = np.zeros((self.total_electrodes), dtype=np.bool)
-        m[tgt['abs_electrode_num']] = True
+        m[abs_electrode_num] = True
 
         w = m * 1.0
 
         Y = np.zeros((self.total_electrodes, y.shape[0]))
-        Y[tgt['abs_electrode_num'], :] = y.T
+        Y[abs_electrode_num, :] = y.T
 
         return (X, m, w, Y)
 

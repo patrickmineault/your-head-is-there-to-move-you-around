@@ -9,6 +9,17 @@ import torch
 from pprint import pprint
 
 class TestPvc1Loader(unittest.TestCase):
+    def test_virtual(self):
+        loader = pvc1.PVC1('/mnt/e/data_derived/crcns-ringach-data/',
+                    nt=9,
+                    ntau=7,
+                    nframedelay=0,
+                    virtual='rot')
+        self.assertEqual(loader.total_electrodes, 508)
+        X0, _, _, _ = loader[0]
+        X1, _, _, _ = loader[len(loader) // 2]
+        self.assertEqual(X0[0, 0, 0, 0], X1[0, 0, -1, -1])
+
     def test_delays(self):
         loader = pvc1.PVC1('../data/crcns-ringach-data/',
                     nt=9,

@@ -1,4 +1,4 @@
-from . import utils
+from . import utils, virtualize
 
 import collections
 import datetime
@@ -106,6 +106,7 @@ class PVC4(torch.utils.data.Dataset):
                  nframestart=15,
                  split='train',
                  single_cell=-1,
+                 virtual=False,
                  ):
 
         block_len = 6  # in seconds
@@ -298,6 +299,19 @@ class PVC4(torch.utils.data.Dataset):
             assert n > 0
             n_electrodes += 1
         
+        self.underlying_electrodes = n_electrodes
+        if virtual:
+            transforms = virtualize.list_transformations(virtual)
+            long_seq = []
+            delta = 0
+            for t in transforms:
+                long_seq += [{'virtual_electrode_num': v['cellnum'] + delta,
+                              'transform': t, 
+                              **v} for v in sequence]
+                delta += n_electrodes
+            sequence = long_seq
+            n_electrodes *= len(transforms)
+
         self.sequence = sequence
         self.total_electrodes = n_electrodes
 
@@ -360,16 +374,22 @@ class PVC4(torch.utils.data.Dataset):
 
         X = (X - mm) / ss
 
+        if 'transform' in tgt:
+            X = virtualize.transform(X, tgt['transform'])
+            abs_electrode_num = tgt['virtual_electrode_num']
+        else:
+            abs_electrode_num = tgt['cellnum']
+
         # Create a mask from the electrode range
         M = np.zeros((self.total_electrodes), dtype=np.bool)
-        M[tgt['cellnum']] = True
+        M[abs_electrode_num] = True
 
         Y = np.zeros((self.total_electrodes, self.nt))
-        Y[tgt['cellnum'], :] = tgt['spikes']
+        Y[abs_electrode_num, :] = tgt['spikes']
 
         w = np.sqrt(tgt['nrepeats'] / max(tgt['mean_spk'], .1))
         W = np.zeros((self.total_electrodes))
-        W[tgt['cellnum']] = w # max(w, .1)
+        W[abs_electrode_num] = w # max(w, .1)
 
         return (X, M, W, Y)
 
