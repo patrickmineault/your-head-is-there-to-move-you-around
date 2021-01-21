@@ -42,7 +42,8 @@ class Vim2(torch.utils.data.Dataset):
                  nframedelay=0,
                  split='train',
                  subject='s1',
-                 mask_type='roi'
+                 mask_type='roi',
+                 deconvolved=False,
                  ):
 
         block_len = 10  # in seconds
@@ -64,6 +65,7 @@ class Vim2(torch.utils.data.Dataset):
         self.framerate = 15
         self.sampling_freq = 16
         self.mask_type = mask_type
+        self.deconvolved = deconvolved
 
 
         if 540 % nt != 0:
@@ -142,10 +144,17 @@ class Vim2(torch.utils.data.Dataset):
                 f'VoxelResponses_subject{self.subject[1]}.mat'))
 
             if tgt['split'] == 'report':
-                resp_rs[self.subject] = f.get_node('/rv')[:].T
+                if self.deconvolved:
+                    resp_rs[self.subject] = f.get_node('/rvd')[:].T
+                else:
+                    resp_rs[self.subject] = f.get_node('/rv')[:].T
+                
                 resp_rs[self.subject] = resp_rs[self.subject][:, self.mask]
             else:
-                resp_ts[self.subject] = f.get_node('/rt')[:].T[:self.total_reponses, :]
+                if self.deconvolved:
+                    resp_ts[self.subject] = f.get_node('/rtd')[:].T[:self.total_reponses, :]
+                else:
+                    resp_ts[self.subject] = f.get_node('/rt')[:].T[:self.total_reponses, :]
                 resp_ts[self.subject] = resp_ts[self.subject][:, self.mask]
 
             f.close()
