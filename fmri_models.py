@@ -8,7 +8,7 @@ import sklearn.random_projection
 import tables
 from tqdm import tqdm
 
-from loaders import vim2, pvc4, mt2
+from loaders import pvc4, pvc1, vim2, mt2
 from modelzoo import gabor_pyramid, separable_net
 from modelzoo.motionnet import MotionNet
 from modelzoo.slowfast_wrapper import SlowFast
@@ -57,26 +57,71 @@ def downsample_3d(X, sz):
     
     return F.interpolate(X, size=(X.shape[2], sz, sz), mode='trilinear', align_corners=True)
 
+"""
+def get_downsampler(X0_shape, X_shape, Y_shape, ntau):
+    downsample_factor = X0_shape[2] // X_shape[2]
+    assert downsample_factor in (1, 2, 4, 8)
+
+    nt = 1
+    t = torch.arange(0, X_shape[2]) * downsample_factor
+    stride = ntau // (nt + 1)
+
+    dt = (X0_shape[2] - ntau) / (Y0_shape[1] - 1)
+
+    for i in range(Y_shape[1]):
+        t0 = (i + 1) * dt
+        (t - t0)
+"""
+
 class Downsampler(nn.Module):
     def __init__(self, sz):
         super(Downsampler, self).__init__()
         self.sz = sz
 
-    def forward(self, X):
+    def forward(self, data):
         nt = 4
-        assert X.shape[2] in (5, 10, 20, 40, 80), "X.shape[2] must be 10 x a power of 2"
-        big_pixel = X.shape[-1] // self.sz
+        if isinstance(data, tuple):
+            X, X0_shape, Y0_shape, ntau = data
+            ny = Y0_shape[1]
+        else:
+            X = data
+            ntau = X.shape[2]
+            ny = 1
+            assert X.shape[2] in (10, 20, 40, 80), "X.shape[2] must be 10 x a power of 2"
+
+        # assert X.shape[2] in (10, 20, 40, 80, 200), "X.shape[2] must be 10 x a power of 2"
+        stride = ntau // (nt + 1)  # Always use at most 4 time points
+        delta = stride // 2
         
-        stride = X.shape[2] // (nt + 1)  # Always use at most 4 time points
-        delta = (X.shape[2] - nt * stride) // 2
-        slc = slice(delta, delta + stride * nt)
-        X = X[:, :, slc, :, :].reshape(
-            X.shape[0], X.shape[1], nt, stride, X.shape[-2], X.shape[-1]
-        ).mean(3)
-        X = downsample_3d(X, self.sz)
-        assert X.shape[-1] == self.sz
-        assert X.shape[2] == nt
-        return X.reshape(X.shape[0], -1)
+        X_ = downsample_3d(X, self.sz)
+
+        if ny == 1:
+            slc = slice(delta, ntau - delta)
+            return X_[:, :, slc, :, :].reshape(
+                X.shape[0], 
+                X.shape[1], 
+                nt, -1, X_.shape[-2], X_.shape[-1]).mean(3).reshape(X_.shape[0], -1)
+        else:
+            # Need to restride the data. 
+            downsample_amount = X.shape[2] / X0_shape[2]
+
+            dt = (X0_shape[2] - ntau) / (Y0_shape[1] - 1)
+
+            Xs = []
+            for i in range(ny):
+                slc = slice(int(downsample_amount * (i * dt + delta)), 
+                            int(downsample_amount * (i * dt + ntau - delta)))
+                assert (slc.stop - slc.start) % nt == 0
+
+                
+                Xs.append(
+                    X_[:, :, slc, :, :].reshape(
+                        X_.shape[0],
+                        X_.shape[1],
+                        nt, -1, X_.shape[-2], X_.shape[-1]).mean(3).reshape(X_.shape[0], -1)
+                )
+            
+            return torch.stack(Xs, axis=1).reshape(-1, Xs[0].shape[-1])
 
 class RP(nn.Module):
     def __init__(self, ncomp, sparse=True):
@@ -137,16 +182,48 @@ class Averager(nn.Module):
     def __init__(self):
         super(Averager, self).__init__()
 
-    def forward(self, X):
+    def forward(self, data):
         nt = 4
-        assert X.shape[2] in (10, 20, 40, 80), "X.shape[2] must be 10 x a power of 2"
-        stride = X.shape[2] // (nt + 1)  # Always use at most 4 time points
-        delta = (X.shape[2] - nt * stride) // 2
-        slc = slice(delta, delta + stride * nt)
-        return X[:, :, slc, :, :].mean(4).mean(3).reshape(
-            X.shape[0], 
-            X.shape[1], 
-            nt, -1).mean(3).reshape(X.shape[0], -1)
+        if isinstance(data, tuple):
+            X, X0_shape, Y0_shape, ntau = data
+            ny = Y0_shape[1]
+        else:
+            X = data
+            ntau = X.shape[2]
+            ny = 1
+            assert X.shape[2] in (10, 20, 40, 80), "X.shape[2] must be 10 x a power of 2"
+
+        if X.ndim == 4:
+            X = X.unsqueeze(0)
+
+        # assert X.shape[2] in (10, 20, 40, 80, 200), "X.shape[2] must be 10 x a power of 2"
+        stride = ntau // (nt + 1)  # Always use at most 4 time points
+        delta = stride // 2
+        
+        X_ = X.mean(4).mean(3)
+
+        if ny == 1:
+            slc = slice(delta, ntau - delta)
+            return X_[:, :, slc].reshape(
+                X.shape[0], 
+                X.shape[1], 
+                nt, -1).mean(3).reshape(X_.shape[0], -1)
+        else:
+            # Need to restride the data. 
+            dt = (X0_shape[2] - ntau) / (Y0_shape[1] - 1)
+            Xs = []
+            for i in range(ny):
+                slc = slice(int(delta + i * dt), 
+                            int(ntau - delta + i * dt))
+                assert (slc.stop - slc.start) % nt == 0
+                Xs.append(
+                    X_[:, :, slc].reshape(
+                        X_.shape[0],
+                        X_.shape[1],
+                        nt, -1).mean(3).reshape(X_.shape[0], -1)
+                )
+            
+            return torch.stack(Xs, axis=1).reshape(-1, Xs[0].shape[-1])
 
 def get_projection_matrix(X, n):
     X_ = X.cpu().detach().numpy()
@@ -160,6 +237,102 @@ def resize(movie, width):
                         mode='trilinear',
                         align_corners=False)
     return data
+
+def preprocess_data_consolidated(loader, 
+                                model, 
+                                aggregator, 
+                                activations, 
+                                metadata, 
+                                args):
+
+    # Check if cache exists for this model.
+    repo = git.Repo(search_parent_directories=True)
+    sha = repo.head.object.hexsha
+    cache_file = f'{args.features}_{metadata["sz"]}_{args.dataset}_{args.subset}_{loader.dataset.split}_{args.aggregator}_cons_{sha}.h5'
+    cache_file = os.path.join(args.cache_root, cache_file)
+
+    if not os.path.exists(cache_file):
+        print("Create cache file")
+        h5file = tables.open_file(cache_file, mode="w", title="Cache file")
+        layers = {}
+        outputs = None
+        nrows = len(loader) * loader.batch_size
+
+        progress_bar = tqdm(total=len(loader), unit='batches', unit_scale=True)
+
+        for i, loaded in enumerate(loader):
+            if len(loaded) == 2:
+                X, Y = loaded
+            else:
+                X, _, _, Y = loaded
+
+                # So the order of the indices matches the order in vim2
+                Y = Y.permute(0, 2, 1)
+
+            progress_bar.update(1)
+            X, Y = X.to(device='cuda'), Y.to(device='cuda')
+
+            with torch.no_grad():
+                X = resize(X, metadata['sz'])
+                if metadata['threed']:
+                    result = model(X)
+                    
+                    for layer in activations.keys():
+                        try:
+                            fit_layer = aggregator((activations[layer], 
+                                                    X.shape, 
+                                                    Y.shape,
+                                                    loader.dataset.ntau)).cpu().detach().numpy()
+                        except AssertionError:
+                            # This is because the output is too small, so the aggregator doesn't work.
+                            continue
+                        
+                        if outputs is None:
+                            layers[layer] = h5file.create_earray('/', f'layer{layer}', obj=fit_layer, expectedrows=nrows)
+                        else:
+                            layers[layer].append(fit_layer)
+                else:
+                    result = model(X.permute(0, 2, 1, 3, 4).reshape(-1, 
+                                                                    X.shape[1], 
+                                                                    X.shape[3], 
+                                                                    X.shape[4]))
+                    
+                    for layer in activations.keys():
+                        fit_layer = activations[layer]
+                        fit_layer = fit_layer.reshape(X.shape[0], X.shape[2], *fit_layer.shape[1:])
+                        fit_layer = fit_layer.permute(0, 2, 1, 3, 4)
+                        fit_layer = aggregator(fit_layer).cpu().detach().numpy()
+
+                        if outputs is None:
+                            layers[layer] = h5file.create_earray('/', f'layer{layer}', obj=fit_layer, expectedrows=nrows)
+                        else:
+                            layers[layer].append(fit_layer)
+
+                #Y = Y.permute(1, 0, 2).reshape(-1, Y.shape[2])
+                Y = Y.reshape(-1, Y.shape[2])
+
+                if outputs is None:
+                    outputs = h5file.create_earray('/', 
+                                                f'outputs', 
+                                                obj=Y.cpu().detach().numpy(), 
+                                                expectedrows=nrows)
+                else:
+                    outputs.append(Y.cpu().detach().numpy())
+
+        progress_bar.close()
+        h5file.close()
+    
+    h5file = tables.open_file(cache_file, mode="r")
+    try:
+        X = torch.tensor(h5file.get_node(f'/layer{args.layer}')[:], device='cpu')
+    except tables.exceptions.NoSuchNodeError:
+        h5file.close()
+        return None, None
+    Y = torch.tensor(h5file.get_node(f'/outputs')[:], device='cpu', dtype=torch.float).squeeze()
+    if Y.ndim == 1:
+        Y = Y.reshape(-1, 1)
+    h5file.close()
+    return X, Y
 
 def preprocess_data(loader, 
                     model, 
@@ -260,18 +433,41 @@ def get_aggregator(metadata, args):
 
 
 def get_dataset(args, fold):
+    if args.consolidated:
+        nt = 9
+    else:
+        nt = 1
+        
     if args.dataset == 'vim2':
         nframedelay = -3
         data = vim2.Vim2(os.path.join(args.data_root, 'crcns-vim2'), 
                                     split=fold, 
-                                    nt=1, 
+                                    nt=nt, 
                                     ntau=80, 
                                     nframedelay=nframedelay,
                                     subject=args.subset)
+    elif args.dataset == 'vim2_deconv':
+        nframedelay = -3
+        data = vim2.Vim2(os.path.join(args.data_root, 'crcns-vim2'), 
+                                    split=fold, 
+                                    nt=nt, 
+                                    ntau=80, 
+                                    nframedelay=nframedelay,
+                                    subject=args.subset,
+                                    deconvolved=True)
+    elif args.dataset == 'pvc1':
+        data = pvc1.PVC1(os.path.join(args.data_root, 'crcns-ringach-data'), 
+                         split=fold, 
+                         nt=nt, 
+                         nx=112,
+                         ny=112,
+                         ntau=10, 
+                         nframedelay=0,
+                         single_cell=int(args.subset))
     elif args.dataset == 'pvc4':
         data = pvc4.PVC4(os.path.join(args.data_root, 'crcns-pvc4'), 
                             split=fold, 
-                             nt=1, 
+                             nt=nt, 
                              nx=112,
                              ny=112,
                              ntau=10, 
@@ -280,7 +476,7 @@ def get_dataset(args, fold):
     elif args.dataset == 'v2':
         data = pvc4.PVC4(os.path.join(args.data_root, 'crcns-v2'), 
                             split=fold, 
-                             nt=1, 
+                             nt=nt, 
                              nx=112,
                              ny=112,
                              ntau=10, 
@@ -289,7 +485,7 @@ def get_dataset(args, fold):
     elif args.dataset == 'mt2':
         data = mt2.MT2(os.path.join(args.data_root, 'crcns-mt2'), 
                             split=fold, 
-                             nt=1, 
+                             nt=nt, 
                              nx=112,
                              ny=112,
                              ntau=10, 
@@ -311,6 +507,11 @@ def get_feature_model(args):
 
     if args.features == 'gaborpyramid3d':
         model = gabor_pyramid.GaborPyramid3d(nlevels=4, stride=(1, 1, 1))
+        layers = [model]
+        metadata = {'sz': 112,
+                    'threed': True}  # The pyramid itself deals with the stride.
+    elif args.features == 'gaborpyramid3d_motionless':
+        model = gabor_pyramid.GaborPyramid3d(nlevels=4, stride=(1, 1, 1), motionless=True)
         layers = [model]
         metadata = {'sz': 112,
                     'threed': True}  # The pyramid itself deals with the stride.
