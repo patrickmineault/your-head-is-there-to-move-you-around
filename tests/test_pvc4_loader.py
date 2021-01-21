@@ -146,6 +146,49 @@ class TestPvc4Loader(unittest.TestCase):
             self.assertEqual(np.isnan(X).sum(), 0)
             self.assertEqual(np.isnan(Y).sum(), 0)
 
+    def test_v2_nonzero(self):
+        for i in range(117):
+            with self.subTest(i=i):
+                loader = pvc4.PVC4('/mnt/e/data_derived/crcns-v2', 
+                                nt=32, 
+                                nx=64,
+                                ny=64,
+                                split='report',
+                                single_cell=i
+                                )
+                sums = 0
+                for _, _, _, Y in loader:
+                    sums += Y.sum()
+                self.assertGreater(sums, 0)
+
+    def test_v2_nonzero_onecell(self):
+        for single_cell in [24, 84, 86, 109]:
+            with self.subTest(i=single_cell):
+                loader = pvc4.PVC4('/mnt/e/data_derived/crcns-v2', 
+                                nt=32, 
+                                nx=64,
+                                ny=64,
+                                split='train',
+                                single_cell=single_cell
+                                )
+
+                loader = pvc4.PVC4('/mnt/e/data_derived/crcns-v2', 
+                                nt=32, 
+                                nx=64,
+                                ny=64,
+                                split='tune',
+                                single_cell=single_cell
+                                )
+
+
+                loader = pvc4.PVC4('/mnt/e/data_derived/crcns-v2', 
+                                nt=32, 
+                                nx=64,
+                                ny=64,
+                                split='report',
+                                single_cell=single_cell
+                                )
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -11,7 +11,7 @@ from pprint import pprint
 
 class TestMt2Loader(unittest.TestCase):
     def test_train(self):
-        loader = mt2.MT2('../data_derived/crcns-mt2', 
+        loader = mt2.MT2('/mnt/e/data_derived/crcns-mt2', 
                            nt=32, 
                            nx=64,
                            ny=64,
@@ -32,20 +32,22 @@ class TestMt2Loader(unittest.TestCase):
         self.assertEqual(y.shape[1], 32)
 
     def test_traintune(self):
-        loader = mt2.MT2('../data_derived/crcns-mt2', 
+        loader = mt2.MT2('/mnt/e/data_derived/crcns-mt2', 
                            nt=32, 
                            nx=64,
                            ny=64,
                            split='traintune',
+                           single_cell=0,
                            )
 
         loader[0]
 
-    def test_tune(self):
-        _ = mt2.MT2('../data_derived/crcns-mt2', nt=32, split='tune')
+    def test_disjoint(self):
+        loader1 = mt2.MT2('/mnt/e/data_derived/crcns-mt2', nt=32, split='traintune', single_cell=0)
+        loader2 = mt2.MT2('/mnt/e/data_derived/crcns-mt2', nt=32, split='report', single_cell=0)
 
-    def test_report(self):
-        _ = mt2.MT2('../data_derived/crcns-mt2', nt=32, split='report')
+        self.assertLess(max([x['end_frame'] for x in loader1.sequence]),
+                        min([x['start_frame'] for x in loader2.sequence]))
 
 
 
