@@ -4,13 +4,20 @@ import os
 import torch
 
 def compute_corr(Yl, Yp):
-    corr = torch.zeros(Yl.shape[1], device=Yl.device)
-    for i in range(Yl.shape[1]):
-        yl, yp = (Yl[:, i].cpu().detach().numpy(), 
-                  Yp[:, i].cpu().detach().numpy())
-        yl = yl[~np.isnan(yl)]
-        yp = yp[~np.isnan(yp)]
-        corr[i] = np.corrcoef(yl, yp)[0, 1]
+    if torch.any(torch.isnan(Yl)) or torch.any(torch.isnan(Yp)):
+        corr = torch.zeros(Yl.shape[1], device=Yl.device)
+        for i in range(Yl.shape[1]):
+            yl, yp = (Yl[:, i].cpu().detach().numpy(), 
+                    Yp[:, i].cpu().detach().numpy())
+            yl = yl[~np.isnan(yl)]
+            yp = yp[~np.isnan(yp)]
+            corr[i] = np.corrcoef(yl, yp)[0, 1]
+    else:
+        Yl = (Yl - Yl.mean(axis=0, keepdims=True))
+        Yp = (Yp - Yp.mean(axis=0, keepdims=True))
+        Yl = Yl / torch.linalg.norm(Yl, axis=0, keepdims=True)
+        Yp = Yp / torch.linalg.norm(Yp, axis=0, keepdims=True)
+        corr = (Yl * Yp).sum(axis=0)
     return corr
 
 
