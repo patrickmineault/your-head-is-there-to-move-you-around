@@ -10,6 +10,7 @@ from fmri_models import (get_dataset,
                          get_feature_model, 
                          get_aggregator,
                          preprocess_data,
+                         preprocess_data_consolidated,
                          get_projection_matrix)
 
 from research_code.cka_step4 import cka
@@ -58,12 +59,23 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
     print(f"Processing layer {args.layer}")
     t0 = time.time()
 
-    X, Y = preprocess_data(trainloader, 
-                           feature_model, 
-                           aggregator,
-                           activations, 
-                           metadata,
-                           args)
+    if args.consolidated:
+        X, Y = preprocess_data_consolidated(trainloader, 
+                            feature_model, 
+                            aggregator,
+                            activations, 
+                            metadata,
+                            args)
+    else:
+        X, Y = preprocess_data(trainloader, 
+                            feature_model, 
+                            aggregator,
+                            activations, 
+                            metadata,
+                            args)
+
+    print(X.shape)
+    print(Y.shape)
 
     if X is None:
         print(f"Skipping layer {args.layer}")
@@ -96,9 +108,13 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
 
     for i in range(kfold):
         X_train, Y_train, X_test, Y_test = X[splits != i, :], Y[splits != i, :], X[splits == i, :], Y[splits == i, :]
+        C = X_train.T.matmul(X_train)
+
         for j, lambda_ in enumerate(lambdas):
-            H = X_train.T.matmul(X_train) + lambda_ * torch.eye(X_train.shape[1], device='cuda')
-            w = torch.inverse(H).matmul(X_train.T.matmul(Y_train))
+            H = C + lambda_ * torch.eye(X_train.shape[1], device='cuda')
+            # w = torch.inverse(H).matmul(X_train.T.matmul(Y_train))
+            # w = torch.linalg.solve(H, X_train.T @ Y_train)
+            w, _ = torch.solve(X_train.T @ Y_train, H)
             Y_pred = X_test.matmul(w)
             Y_preds[splits == i, :, j] = Y_pred.to(device='cpu')
 
@@ -109,17 +125,28 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
 
     # Now we find the best lambdas
     best_lambdas = lambdas[np.argmax(r2_cvs, axis=1)]
+
+    assert best_lambdas.size == Y.shape[1]
+
     # this is in case there's only one output. This is a no-op when best_lambdas 
     # is an array already.
     best_lambdas = np.array(best_lambdas) 
     r2_cv = np.array([r2_cvs[j, i] for j, i in enumerate(np.argmax(r2_cvs, axis=1))])
 
-    X_report, Y_report = preprocess_data(reportloader, 
-                           feature_model, 
-                           aggregator,
-                           activations, 
-                           metadata,
-                           args)
+    if args.consolidated:
+        X_report, Y_report = preprocess_data_consolidated(reportloader, 
+                            feature_model, 
+                            aggregator,
+                            activations, 
+                            metadata,
+                            args)
+    else:
+        X_report, Y_report = preprocess_data(reportloader, 
+                            feature_model, 
+                            aggregator,
+                            activations, 
+                            metadata,
+                            args)
 
     # Compute CKA for report fold
     cka_report = cka(X_report, Y_report)
@@ -140,9 +167,13 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
     best_W = np.zeros((X.shape[1], Y_report.shape[1]))
     Y = Y.to(device='cuda')
 
+    C = X.T.matmul(X)
     for lambda_ in best_lambda_vals:
-        H = X.T.matmul(X) + lambda_ * torch.eye(X.shape[1], device='cuda')
-        w = torch.inverse(H).matmul(X.T.matmul(Y))
+        H = C + lambda_ * torch.eye(X.shape[1], device='cuda')
+        # w = torch.inverse(H).matmul(X.T.matmul(Y))
+        # Note: this would be ideal, but it's only implemented in nightly, not stable yet.
+        # w = torch.linalg.solve(H, X.T @ Y)
+        w, _ = torch.solve(X.T @ Y, H)
         Y_pred = X_report.matmul(w)
         to_replace = (best_lambdas == lambda_)
 
@@ -163,8 +194,6 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
     }
 
     results = {
-        'best_lambdas': best_lambdas,
-        'r2_cv': r2_cv,
         'r2_cvs': r2_cvs.cpu().detach().numpy(),
         'r2_report': r2_report.cpu().detach().numpy(),
         'corrs_report': corrs_report.cpu().detach().numpy(),
@@ -201,6 +230,7 @@ def check_existing(args, metadata):
                         {"config.pca": args.pca},
                         {"config.features": args.features},
                         {"config.subset": args.subset},
+                        {"config.consolidated": args.consolidated},
                         {"state": "finished"},
                     ]
                     }
@@ -271,6 +301,7 @@ if __name__ == "__main__":
     parser.add_argument("--no_wandb", default=False, help='Skip using W&B', action='store_true')
     parser.add_argument("--no_save", default=False, help='Skip saving weights', action='store_true')
     parser.add_argument("--skip_existing", default=False, help='Skip existing runs', action='store_true')
+    parser.add_argument("--consolidated", default=False, help='Consolidated batches', action='store_true')
     
     parser.add_argument("--dataset", default='vim2', help='Dataset (currently vim2, pvc4)')
     parser.add_argument("--subset", default='s1', help='Either subject name or neuron num')
