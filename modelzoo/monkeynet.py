@@ -205,6 +205,7 @@ class DorsalNet(nn.Module):
                              drop_connect_rate=.2)
 
         self.dropout = nn.Dropout3d(.1)
+        self.concat = Identity()
 
         # Hack to get visualization working properly.
         self.layers = [('conv1', self.s1.conv1),
@@ -213,6 +214,7 @@ class DorsalNet(nn.Module):
                        ('res1', self.res1),
                        ('res2', self.res2),
                        ('res3', self.res3),
+                       ('concat', self.concat),
                        ]
 
     def forward(self, x):
@@ -221,6 +223,9 @@ class DorsalNet(nn.Module):
         x2 = self.res1(x1)
         x3 = self.res2(x2)
         x4 = self.res3(x3)
+
+        # Add two types of features together
+        self.concat(torch.cat((x0, x4), dim=1))
 
         x = self.dropout(x4)
 
