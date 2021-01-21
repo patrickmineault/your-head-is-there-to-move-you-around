@@ -112,7 +112,7 @@ class V1Net(nn.Module):
         self.s1 = ShallowNet(nstartfeats=64, 
                              symmetric=True,
                              dropout_rate=0,
-                             weight_norm=True)
+                             weight_norm=False)
 
         self.skip_conv = nn.Conv3d(64, 
                              32,
@@ -164,12 +164,76 @@ class V1Net(nn.Module):
         return x
 
 
+class DorsalNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.s1 = ShallowNet(nstartfeats=64, 
+                             symmetric=True,
+                             dropout_rate=0,
+                             weight_norm=False)
+
+        self.res0 = ResBlock(64, 
+                             32, 
+                             1, 
+                             1, 
+                             BottleneckTransform, 
+                             8,
+                             drop_connect_rate=.2)
+
+        self.res1 = ResBlock(32, 
+                             32, 
+                             3, 
+                             1, 
+                             BottleneckTransform, 
+                             8,
+                             drop_connect_rate=.2)
+
+        self.res2 = ResBlock(32, 
+                             32, 
+                             1, 
+                             1, 
+                             BottleneckTransform, 
+                             8,
+                             drop_connect_rate=.2)
+
+        self.res3 = ResBlock(32, 
+                             32, 
+                             3, 
+                             1, 
+                             BottleneckTransform, 
+                             8,
+                             drop_connect_rate=.2)
+
+        self.dropout = nn.Dropout3d(.1)
+
+        # Hack to get visualization working properly.
+        self.layers = [('conv1', self.s1.conv1),
+                       ('bn1', self.s1.bn1),
+                       ('res0', self.res0),
+                       ('res1', self.res1),
+                       ('res2', self.res2),
+                       ('res3', self.res3),
+                       ]
+
+    def forward(self, x):
+        x0 = self.s1(x)
+        x1 = self.res0(x0)
+        x2 = self.res1(x1)
+        x3 = self.res2(x2)
+        x4 = self.res3(x3)
+
+        x = self.dropout(x4)
+
+        return x
+
+
 class Identity(nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__()
 
     def forward(self, x):
         return x
+
 
 """From SlowFast"""
 class ResBlock(nn.Module):
