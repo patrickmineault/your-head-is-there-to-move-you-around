@@ -13,7 +13,7 @@ from modelzoo import gabor_pyramid, separable_net
 from modelzoo.motionnet import MotionNet
 from modelzoo.slowfast_wrapper import SlowFast
 from modelzoo.shiftnet import ShiftNet
-from modelzoo.monkeynet import ShallowNet, V1Net
+from modelzoo.monkeynet import ShallowNet, V1Net, DorsalNet
 
 import torch
 from torch import nn
@@ -669,6 +669,18 @@ def get_feature_model(args):
         subnet_dict = extract_subnet_dict(checkpoint)
 
         model = V1Net()
+        model.load_state_dict(subnet_dict)
+        layers = [x for _, x in model.layers]
+
+        metadata = {'sz': 112,
+                    'threed': True}
+    elif args.features == 'dorsalnet':
+        path = os.path.join(args.ckpt_root, 'dorsalnet-model.ckpt-1360000-2021-01-21 13-24-29.132420.pt')
+        checkpoint = torch.load(path)
+
+        subnet_dict = extract_subnet_dict(checkpoint)
+
+        model = DorsalNet()
         model.load_state_dict(subnet_dict)
         layers = [x for _, x in model.layers]
 
