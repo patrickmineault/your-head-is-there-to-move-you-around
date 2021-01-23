@@ -629,7 +629,12 @@ def get_feature_model(args):
 
         if args.subsample_layers:
             nums = [0, 1, 2, 4, 6, 8, 10, 12, 14, 16]
-            layers = [layer for i, layer in enumerate(layers.values()) if i in nums]
+            l = []
+            for i, (layer_name, layer) in enumerate(layers.items()):
+                if i in nums:
+                    l.append((layer_name, layer))
+
+            layers = collections.OrderedDict(l)
 
         metadata = {'sz': 224,
                     'threed': True}
