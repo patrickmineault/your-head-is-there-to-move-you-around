@@ -235,7 +235,7 @@ def check_existing(args, metadata):
                     ]
                     }
                 )
-    return len(runs) >= metadata['nlayers']
+    return len(runs) >= len(metadata['layers'])
 
 
 def main(args):
