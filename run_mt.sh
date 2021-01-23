@@ -25,7 +25,7 @@ do
             --batch_size 8 \
             --ckpt_root /storage/checkpoints \
             --data_root /storage/data_derived \
-            --slowfast_root ../slowfast \
+            --slowfast_root /workspace/slowfast \
             --aggregator downsample \
             --aggregator_sz 8 \
             --pca 500 \
