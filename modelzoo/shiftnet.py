@@ -1,9 +1,9 @@
+import collections
+import numpy as np
 import os
 import pickle
 import requests
 from tqdm import tqdm
-
-import numpy as np
 
 import torch
 from torch import nn
@@ -71,12 +71,13 @@ class ShiftNet(nn.Module):
 
         self.load_weights(args)
 
-        self.layers = [self.conv1_relu, 
-                       self.pool1, 
-                       self.block1.conv1_relu,
-                       self.block1.relu,
-                       self.block2.conv1_relu,
-                       self.block2.relu]
+        self.layers = collections.OrderedDict([
+                       ('conv1_relu', self.conv1_relu), 
+                       ('pool1', self.pool1), 
+                       ('block1_conv1_relu', self.block1.conv1_relu),
+                       ('block1_relu', self.block1.relu),
+                       ('block2_conv1_relu', self.block2.conv1_relu),
+                       ('block2_relu', self.block2.relu)])
 
     def load_weights(self, args):
         ckpt = 'shiftnet.pkl'

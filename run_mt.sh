@@ -30,7 +30,8 @@ do
             --aggregator_sz 8 \
             --pca 500 \
             --no_save \
-            --skip_existing
+            --skip_existing \
+            --subsample_layers
         # Clear cache.
         rm -f cache/*
     done

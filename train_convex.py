@@ -56,7 +56,7 @@ def save_to_wandb(results, weights, args, offline=False):
 
 def compute_layer(trainloader, reportloader, feature_model, aggregator, 
                   activations, metadata, args):
-    print(f"Processing layer {args.layer}")
+    print(f"Processing layer {args.layer_name}")
     t0 = time.time()
 
     if args.consolidated:
@@ -78,7 +78,7 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
     print(Y.shape)
 
     if X is None:
-        print(f"Skipping layer {args.layer}")
+        print(f"Skipping layer {args.layer_name}")
         return
 
     m = X.mean(axis=0, keepdims=True)
@@ -107,7 +107,7 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
     Y_preds = torch.zeros(Y.shape[0], Y.shape[1], len(lambdas))
 
     for i in range(kfold):
-        X_train, Y_train, X_test, Y_test = X[splits != i, :], Y[splits != i, :], X[splits == i, :], Y[splits == i, :]
+        X_train, Y_train, X_test = X[splits != i, :], Y[splits != i, :], X[splits == i, :]
         C = X_train.T.matmul(X_train)
 
         for j, lambda_ in enumerate(lambdas):
@@ -171,7 +171,7 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
     for lambda_ in best_lambda_vals:
         H = C + lambda_ * torch.eye(X.shape[1], device='cuda')
         # w = torch.inverse(H).matmul(X.T.matmul(Y))
-        # Note: this would be ideal, but it's only implemented in nightly, not stable yet.
+        # This would be ideal, but it's not in torch stable yet.
         # w = torch.linalg.solve(H, X.T @ Y)
         w, _ = torch.solve(X.T @ Y, H)
         Y_pred = X_report.matmul(w)
@@ -281,14 +281,20 @@ def main(args):
     feature_model.to(device=device)
 
     # Do this for every layer under the sun.
-    for layer in range(metadata['nlayers']):
-        args.layer = layer
-        compute_layer(trainloader, reportloader, feature_model, aggregator, 
-                      activations, metadata, args)
+    for layer_num, layer_name in enumerate(metadata['layers'].keys()):
+        args.layer = layer_num  # For backwards compatibility
+        args.layer_name = layer_name
+        compute_layer(trainloader, 
+                      reportloader, 
+                      feature_model, 
+                      aggregator, 
+                      activations, 
+                      metadata, 
+                      args)
 
 
 if __name__ == "__main__":
-    desc = "Map a pretrained neural net to a time series of brain data (neurons or brains) using a convex mapping"
+    desc = "Map a pretrained neural net to a time series of brain data (neurons or brains) using ridge regression."
     parser = argparse.ArgumentParser(description=desc)
     
     parser.add_argument("--exp_name", required=True, help='Friendly name of experiment')
@@ -302,6 +308,7 @@ if __name__ == "__main__":
     parser.add_argument("--no_save", default=False, help='Skip saving weights', action='store_true')
     parser.add_argument("--skip_existing", default=False, help='Skip existing runs', action='store_true')
     parser.add_argument("--consolidated", default=False, help='Consolidated batches', action='store_true')
+    parser.add_argument("--subsample_layers", default=False, help='Subsample layers (saves disk space & mem)', action='store_true')
     
     parser.add_argument("--dataset", default='vim2', help='Dataset (currently vim2, pvc4)')
     parser.add_argument("--subset", default='s1', help='Either subject name or neuron num')

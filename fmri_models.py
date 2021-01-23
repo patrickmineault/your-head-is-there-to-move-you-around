@@ -324,7 +324,7 @@ def preprocess_data_consolidated(loader,
     
     h5file = tables.open_file(cache_file, mode="r")
     try:
-        X = torch.tensor(h5file.get_node(f'/layer{args.layer}')[:], device='cpu')
+        X = torch.tensor(h5file.get_node(f'/layer{args.layer_name}')[:], device='cpu')
     except tables.exceptions.NoSuchNodeError:
         h5file.close()
         return None, None
@@ -410,7 +410,7 @@ def preprocess_data(loader,
     
     h5file = tables.open_file(cache_file, mode="r")
     try:
-        X = torch.tensor(h5file.get_node(f'/layer{args.layer}')[:], device='cpu')
+        X = torch.tensor(h5file.get_node(f'/layer{args.layer_name}')[:], device='cpu')
     except tables.exceptions.NoSuchNodeError:
         h5file.close()
         return None, None
@@ -507,12 +507,16 @@ def get_feature_model(args):
 
     if args.features == 'gaborpyramid3d':
         model = gabor_pyramid.GaborPyramid3d(nlevels=4, stride=(1, 1, 1))
-        layers = [model]
+        layers = collections.OrderedDict([
+            ('layer00', model)
+        ])
         metadata = {'sz': 112,
                     'threed': True}  # The pyramid itself deals with the stride.
     elif args.features == 'gaborpyramid3d_motionless':
         model = gabor_pyramid.GaborPyramid3d(nlevels=4, stride=(1, 1, 1), motionless=True)
-        layers = [model]
+        layers = collections.OrderDict([
+            ('layer00', model)
+        ])
         metadata = {'sz': 112,
                     'threed': True}  # The pyramid itself deals with the stride.
     elif args.features in ('r3d_18', 'mc3_18', 'r2plus1d_18'):
@@ -523,25 +527,25 @@ def get_feature_model(args):
         elif args.features == 'r2plus1d_18':
             model = r2plus1d_18(pretrained=True)
 
-        layers = (
-            model.stem[2],
-            model.layer1[0].conv1[2],
-            model.layer1[0].relu,
-            model.layer1[1].conv1[2],
-            model.layer1[1].relu,
-            model.layer2[0].conv1[2],
-            model.layer2[0].relu,
-            model.layer2[1].conv1[2],
-            model.layer2[1].relu,
-            model.layer3[0].conv1[2],
-            model.layer3[0].relu,
-            model.layer3[1].conv1[2],
-            model.layer3[1].relu,
-            model.layer4[0].conv1[2],
-            model.layer4[0].relu,
-            model.layer4[1].conv1[2],
-            model.layer4[1].relu,
-        )
+        layers = collections.OrderedDict([
+            ('layer00', model.stem[2]),
+            ('layer01', model.layer1[0].conv1[2]),
+            ('layer02', model.layer1[0].relu),
+            ('layer03', model.layer1[1].conv1[2]),
+            ('layer04', model.layer1[1].relu),
+            ('layer05', model.layer2[0].conv1[2]),
+            ('layer06', model.layer2[0].relu),
+            ('layer07', model.layer2[1].conv1[2]),
+            ('layer08', model.layer2[1].relu),
+            ('layer09', model.layer3[0].conv1[2]),
+            ('layer10', model.layer3[0].relu),
+            ('layer11', model.layer3[1].conv1[2]),
+            ('layer12', model.layer3[1].relu),
+            ('layer13', model.layer4[0].conv1[2]),
+            ('layer14', model.layer4[0].relu),
+            ('layer15', model.layer4[1].conv1[2]),
+            ('layer16', model.layer4[1].relu)
+        ])
 
         metadata = {'sz': 112,
                     'threed': True}
@@ -555,25 +559,25 @@ def get_feature_model(args):
     elif args.features in ('resnet18'):
         model = resnet18(pretrained=True)
 
-        layers = (
-            model.relu,
-            model.layer1[0].relu,
-            model.layer1[0],
-            model.layer1[1].relu,
-            model.layer1[1],
-            model.layer2[0].relu,
-            model.layer2[0],
-            model.layer2[1].relu,
-            model.layer2[1],
-            model.layer3[0].relu,
-            model.layer3[0],
-            model.layer3[1].relu,
-            model.layer3[1],
-            model.layer4[0].relu,
-            model.layer4[0],
-            model.layer4[1].relu,
-            model.layer4[1],
-        )
+        layers = collections.OrderedDict([
+            ('layer00', model.relu),
+            ('layer01', model.layer1[0].relu),
+            ('layer02', model.layer1[0]),
+            ('layer03', model.layer1[1].relu),
+            ('layer04', model.layer1[1]),
+            ('layer05', model.layer2[0].relu),
+            ('layer06', model.layer2[0]),
+            ('layer07', model.layer2[1].relu),
+            ('layer08', model.layer2[1]),
+            ('layer09', model.layer3[0].relu),
+            ('layer10', model.layer3[0]),
+            ('layer11', model.layer3[1].relu),
+            ('layer12', model.layer3[1]),
+            ('layer13', model.layer4[0].relu),
+            ('layer14', model.layer4[0]),
+            ('layer15', model.layer4[1].relu),
+            ('layer16', model.layer4[1]),
+        ])
 
         metadata = {'sz': 224,
                     'threed': False}
@@ -581,47 +585,51 @@ def get_feature_model(args):
         model = SlowFast(args)
 
         if args.features == 'SlowFast_Fast':
-            layers = (
-                model.model.s1.pathway1_stem.relu,
-                model.model.s1.pathway1_stem,
-                model.model.s2.pathway1_res0,
-                model.model.s2.pathway1_res1,
-                model.model.s2.pathway1_res2,
-                model.model.s3.pathway1_res0,
-                model.model.s3.pathway1_res1,
-                model.model.s3.pathway1_res2,
-                model.model.s3.pathway1_res3,
-                model.model.s4.pathway1_res0,
-                model.model.s4.pathway1_res1,
-                model.model.s4.pathway1_res2,
-                model.model.s4.pathway1_res3,
-                model.model.s4.pathway1_res4,
-                model.model.s4.pathway1_res5,
-                model.model.s5.pathway1_res0,
-                model.model.s5.pathway1_res1,
-                model.model.s5.pathway1_res2,
-            )
+            layers = collections.OrderedDict([
+                ('layer00', model.model.s1.pathway1_stem.relu),
+                ('layer01', model.model.s1.pathway1_stem),
+                ('layer02', model.model.s2.pathway1_res0),
+                ('layer03', model.model.s2.pathway1_res1),
+                ('layer04', model.model.s2.pathway1_res2),
+                ('layer05', model.model.s3.pathway1_res0),
+                ('layer06', model.model.s3.pathway1_res1),
+                ('layer07', model.model.s3.pathway1_res2),
+                ('layer08', model.model.s3.pathway1_res3),
+                ('layer09', model.model.s4.pathway1_res0),
+                ('layer10', model.model.s4.pathway1_res1),
+                ('layer11', model.model.s4.pathway1_res2),
+                ('layer12', model.model.s4.pathway1_res3),
+                ('layer13', model.model.s4.pathway1_res4),
+                ('layer14', model.model.s4.pathway1_res5),
+                ('layer15', model.model.s5.pathway1_res0),
+                ('layer16', model.model.s5.pathway1_res1),
+                ('layer17', model.model.s5.pathway1_res2),
+            ])
         else:
-            layers = (
-                model.model.s1.pathway0_stem.relu,
-                model.model.s1.pathway0_stem,
-                model.model.s2.pathway0_res0,
-                model.model.s2.pathway0_res1,
-                model.model.s2.pathway0_res2,
-                model.model.s3.pathway0_res0,
-                model.model.s3.pathway0_res1,
-                model.model.s3.pathway0_res2,
-                model.model.s3.pathway0_res3,
-                model.model.s4.pathway0_res0,
-                model.model.s4.pathway0_res1,
-                model.model.s4.pathway0_res2,
-                model.model.s4.pathway0_res3,
-                model.model.s4.pathway0_res4,
-                model.model.s4.pathway0_res5,
-                model.model.s5.pathway0_res0,
-                model.model.s5.pathway0_res1,
-                model.model.s5.pathway0_res2,
-            )
+            layers = collections.OrderedDict([
+                ('layer00', model.model.s1.pathway0_stem.relu),
+                ('layer01', model.model.s1.pathway0_stem),
+                ('layer02', model.model.s2.pathway0_res0),
+                ('layer03', model.model.s2.pathway0_res1),
+                ('layer04', model.model.s2.pathway0_res2),
+                ('layer05', model.model.s3.pathway0_res0),
+                ('layer06', model.model.s3.pathway0_res1),
+                ('layer07', model.model.s3.pathway0_res2),
+                ('layer08', model.model.s3.pathway0_res3),
+                ('layer09', model.model.s4.pathway0_res0),
+                ('layer10', model.model.s4.pathway0_res1),
+                ('layer11', model.model.s4.pathway0_res2),
+                ('layer12', model.model.s4.pathway0_res3),
+                ('layer13', model.model.s4.pathway0_res4),
+                ('layer14', model.model.s4.pathway0_res5),
+                ('layer15', model.model.s5.pathway0_res0),
+                ('layer16', model.model.s5.pathway0_res1),
+                ('layer17', model.model.s5.pathway0_res2),
+            ])
+
+        if args.subsample_layers:
+            nums = [0, 1, 2, 4, 6, 8, 10, 12, 14, 16]
+            layers = [layer for i, layer in enumerate(layers.values()) if i in nums]
 
         metadata = {'sz': 224,
                     'threed': True}
@@ -633,10 +641,10 @@ def get_feature_model(args):
                     'threed': True}
     elif args.features in ('MotionNet'):
         model = MotionNet(args)
-        layers = (
+        layers = collections.OrderedDict([
             model.relu,
             model.softmax
-        )
+        ])
 
         metadata = {'sz': 112,
                     'threed': True}
@@ -658,7 +666,7 @@ def get_feature_model(args):
         model = ShallowNet(nstartfeats=subnet_dict['bn1.weight'].shape[0],
                            symmetric=subnet_dict['bn1.weight'].shape[0] > subnet_dict['conv1.weight'].shape[0])
         model.load_state_dict(subnet_dict)
-        layers = [x for _, x in model.layers]
+        layers = model.layers
 
         metadata = {'sz': 112,
                     'threed': True}
@@ -670,7 +678,7 @@ def get_feature_model(args):
 
         model = V1Net()
         model.load_state_dict(subnet_dict)
-        layers = [x for _, x in model.layers]
+        layers = model.layers
 
         metadata = {'sz': 112,
                     'threed': True}
@@ -682,7 +690,7 @@ def get_feature_model(args):
 
         model = DorsalNet()
         model.load_state_dict(subnet_dict)
-        layers = [x for _, x in model.layers]
+        layers = model.layers
 
         metadata = {'sz': 112,
                     'threed': True}
@@ -690,10 +698,10 @@ def get_feature_model(args):
     else:
         raise NotImplementedError('Model not implemented yet')
 
-    for i, layer in enumerate(layers):
-        layer.register_forward_hook(hook(i))
+    for key, layer in layers.items():
+        layer.register_forward_hook(hook(key))
 
-    metadata['nlayers'] = len(layers)
+    metadata['layers'] = layers
     
     # Put model in eval mode (for batch_norm, dropout, etc.)
     model.eval()
