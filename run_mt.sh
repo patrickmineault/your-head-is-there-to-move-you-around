@@ -28,7 +28,7 @@ do
             --data_root /storage/data_derived \
             --slowfast_root /workspace/slowfast \
             --aggregator downsample \
-            --aggregator_sz 6 \
+            --aggregator_sz 8 \
             --pca 500 \
             --no_save \
             --skip_existing \

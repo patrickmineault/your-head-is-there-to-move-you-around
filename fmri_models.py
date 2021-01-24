@@ -628,7 +628,7 @@ def get_feature_model(args):
             ])
 
         if args.subsample_layers:
-            nums = [0, 1, 2, 4, 6, 8, 10, 12, 14, 16]
+            nums = [0, 1, 2, 4, 6, 8, 10]
             l = []
             for i, (layer_name, layer) in enumerate(layers.items()):
                 if i in nums:
