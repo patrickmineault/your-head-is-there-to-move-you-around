@@ -5,8 +5,10 @@ set -e
 # models=(gaborpyramid3d r3d_18 ShallowMonkeyNet_pvc1 V1Net)
 if [ "$1" == "resnet" ]; then
     models=(MotionNet ShiftNet resnet18 mc3_18 r2plus1d_18)
+    size=8
 elif [ "$1" == "slowfast" ]; then
     models=(Slow SlowFast_Fast SlowFast_Slow I3D)
+    size=6
 else
     echo "Unknown type!"
     exit 1
@@ -28,7 +30,7 @@ do
             --data_root /storage/data_derived \
             --slowfast_root /workspace/slowfast \
             --aggregator downsample \
-            --aggregator_sz 8 \
+            --aggregator_sz $size \
             --pca 500 \
             --no_save \
             --skip_existing \
