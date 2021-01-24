@@ -23,16 +23,18 @@ do
             --features "$model" \
             --subset "$subset" \
             --batch_size 8 \
+            --cache_root ./cache \
             --ckpt_root /storage/checkpoints \
             --data_root /storage/data_derived \
             --slowfast_root /workspace/slowfast \
             --aggregator downsample \
-            --aggregator_sz 8 \
+            --aggregator_sz 6 \
             --pca 500 \
             --no_save \
             --skip_existing \
             --subsample_layers
+
         # Clear cache.
-        rm -f cache/*
+        rm -f ./cache
     done
 done
