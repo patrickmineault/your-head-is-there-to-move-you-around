@@ -11,7 +11,8 @@ from fmri_models import (get_dataset,
                          get_aggregator,
                          preprocess_data,
                          preprocess_data_consolidated,
-                         get_projection_matrix)
+                         get_projection_matrix,
+                         tune_batch_size)
 
 from research_code.cka_step4 import cka
 
@@ -258,18 +259,6 @@ def main(args):
     trainset = get_dataset(args, 'traintune')
     reportset = get_dataset(args, 'report')
 
-    trainloader = torch.utils.data.DataLoader(trainset, 
-                                              batch_size=args.batch_size, 
-                                              shuffle=False,
-                                              pin_memory=True
-                                              )
-
-    reportloader = torch.utils.data.DataLoader(reportset, 
-                                             batch_size=args.batch_size, 
-                                             shuffle=False,
-                                             pin_memory=True
-                                             )
-
     args.ntau = trainset.ntau
     feature_model, activations, metadata = get_feature_model(args)
 
@@ -281,6 +270,24 @@ def main(args):
 
     aggregator = get_aggregator(metadata, args)
     feature_model.to(device=device)
+
+    if args.autotune:
+        batch_size = tune_batch_size(feature_model, trainset, metadata)
+    else:
+        batch_size = args.batch_size
+
+    trainloader = torch.utils.data.DataLoader(trainset, 
+                                              batch_size=batch_size, 
+                                              shuffle=False,
+                                              pin_memory=True
+                                              )
+
+    reportloader = torch.utils.data.DataLoader(reportset, 
+                                             batch_size=batch_size, 
+                                             shuffle=False,
+                                             pin_memory=True
+                                             )
+
 
     # Do this for every layer under the sun.
     for layer_num, layer_name in enumerate(metadata['layers'].keys()):

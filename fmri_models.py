@@ -23,6 +23,8 @@ from torchvision.models.resnet import resnet18
 from torchvision.models.vgg import vgg19
 from torchvision.models.video import r3d_18, mc3_18, r2plus1d_18
 
+import GPUtil
+
 class Passthrough(nn.Module):
     def __init__(self):
         super(Passthrough, self).__init__()
@@ -87,7 +89,10 @@ class Downsampler(nn.Module):
             X = data
             ntau = X.shape[2]
             ny = 1
-            assert X.shape[2] in (10, 20, 40, 80), "X.shape[2] must be 10 x a power of 2"
+            
+            # 6 and 12 are one-offs for FastSlow_Fast
+            if X.shape[2] not in (5, 6, 10, 12, 20, 40, 80):
+                raise NotImplementedError("X.shape[2] must be 10 x a power of 2")
 
         # assert X.shape[2] in (10, 20, 40, 80, 200), "X.shape[2] must be 10 x a power of 2"
         stride = ntau // (nt + 1)  # Always use at most 4 time points
@@ -96,7 +101,7 @@ class Downsampler(nn.Module):
         X_ = downsample_3d(X, self.sz)
 
         if ny == 1:
-            slc = slice(delta, ntau - delta)
+            slc = slice(delta, delta + nt * stride)
             return X_[:, :, slc, :, :].reshape(
                 X.shape[0], 
                 X.shape[1], 
@@ -283,7 +288,7 @@ def preprocess_data_consolidated(loader,
                                                     X.shape, 
                                                     Y.shape,
                                                     loader.dataset.ntau)).cpu().detach().numpy()
-                        except AssertionError:
+                        except NotImplementedError:
                             # This is because the output is too small, so the aggregator doesn't work.
                             continue
                         
@@ -334,6 +339,40 @@ def preprocess_data_consolidated(loader,
     h5file.close()
     return X, Y
 
+def tune_batch_size(model, loader, metadata):
+    """This doesn't help _that_ much, about 20%."""
+    print("Tuning batch size")
+
+    sampler_size = 4
+
+    Xs = []
+    Ys = []
+    for idx in range(sampler_size):
+        loaded = loader[idx]
+        if len(loaded) == 2:
+            X, Y = loaded
+        else:
+            X, _, _, Y = loaded
+        Xs.append(torch.tensor(X, device='cuda'))
+        Ys.append(torch.tensor(Y, device='cuda'))
+
+    X = torch.stack(Xs, axis=0)
+    Y = torch.stack(Ys, axis=0)
+
+    X, Y = X.to(device='cuda'), Y.to(device='cuda')
+
+    X = resize(X, metadata['sz'])
+    
+    _ = model(X)
+
+    # Tune the batch size to maximize throughput.
+    devices = GPUtil.getGPUs()
+    multiplier = devices[0].memoryTotal // devices[0].memoryUsed
+
+    batch_size = int(multiplier * sampler_size)
+    print(f"Automatic batch size of {batch_size}")
+    return batch_size
+
 def preprocess_data(loader, 
                     model, 
                     aggregator, 
@@ -371,9 +410,13 @@ def preprocess_data(loader,
                     
                     for layer in activations.keys():
                         try:
-                            fit_layer = aggregator(activations[layer]).cpu().detach().numpy()
-                        except AssertionError:
+                            al = activations[layer]
+                            # print(al.shape)
+                            fit_layer = aggregator(al).cpu().detach().numpy()
+                        except NotImplementedError as e:
                             # This is because the output is too small, so the aggregator doesn't work.
+                            # print(e)
+                            # raise(e)
                             continue
                         
                         if outputs is None:
@@ -404,13 +447,6 @@ def preprocess_data(loader,
                                                 expectedrows=nrows)
                 else:
                     outputs.append(Y.cpu().detach().numpy())
-
-            if i == 0 and args.autotune:
-                # Tune the batch size to maximize throughput.
-                devices = GPUUtil.getGPUs()
-                multiplier = devices[0].memoryTotal // devices[0].memoryUsed
-                if multiplier > 1:
-                    loader.batch_size *= multiplier
 
         progress_bar.close()
         h5file.close()
@@ -444,6 +480,13 @@ def get_dataset(args, fold):
         nt = 9
     else:
         nt = 1
+
+    # SlowFast_Fast has a limitation that it doesn't work with small inputs,
+    # so fudge things here.
+    if args.features == 'SlowFast_Fast':
+        ntau = 12
+    else:
+        ntau = 10
         
     if args.dataset == 'vim2':
         nframedelay = -3
@@ -468,7 +511,7 @@ def get_dataset(args, fold):
                          nt=nt, 
                          nx=112,
                          ny=112,
-                         ntau=10, 
+                         ntau=ntau, 
                          nframedelay=0,
                          single_cell=int(args.subset))
     elif args.dataset == 'pvc4':
@@ -477,7 +520,7 @@ def get_dataset(args, fold):
                              nt=nt, 
                              nx=112,
                              ny=112,
-                             ntau=10, 
+                             ntau=ntau, 
                              nframedelay=0,
                              single_cell=int(args.subset))
     elif args.dataset == 'v2':
@@ -486,7 +529,7 @@ def get_dataset(args, fold):
                              nt=nt, 
                              nx=112,
                              ny=112,
-                             ntau=10, 
+                             ntau=ntau, 
                              nframedelay=0,
                              single_cell=int(args.subset))
     elif args.dataset == 'mt2':
@@ -495,7 +538,7 @@ def get_dataset(args, fold):
                              nt=nt, 
                              nx=112,
                              ny=112,
-                             ntau=10, 
+                             ntau=ntau, 
                              nframedelay=1,
                              single_cell=int(args.subset))
 
