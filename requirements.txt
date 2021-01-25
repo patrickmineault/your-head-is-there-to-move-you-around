@@ -8,3 +8,4 @@ sklearn
 tables
 tqdm
 wandb
+GPUUtil
