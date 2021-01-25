@@ -74,19 +74,21 @@ def compute_layer(trainloader, reportloader, feature_model, aggregator,
                             metadata,
                             args)
 
-    print(X.shape)
-    print(Y.shape)
-
     if X is None:
         print(f"Skipping layer {args.layer_name}")
         return
+
+    print(X.shape)
+    print(Y.shape)
 
     m = X.mean(axis=0, keepdims=True)
     s = X.std(axis=0, keepdims=True) + ff
 
     Ym = Y.mean(axis=0, keepdims=True)
 
-    X = (X - m) / s
+    # Use in-place operators instead of (X - m) / s to save memory.
+    X.add_(-m)
+    X.divide_(s)
 
     if args.pca > -1:
         V = get_projection_matrix(X, n=args.pca)
@@ -308,6 +310,7 @@ if __name__ == "__main__":
     parser.add_argument("--no_save", default=False, help='Skip saving weights', action='store_true')
     parser.add_argument("--skip_existing", default=False, help='Skip existing runs', action='store_true')
     parser.add_argument("--consolidated", default=False, help='Consolidated batches', action='store_true')
+    parser.add_argument("--autotune", default=False, help='Tune the batch size to maximize memory consumption', action='store_true')
     parser.add_argument("--subsample_layers", default=False, help='Subsample layers (saves disk space & mem)', action='store_true')
     
     parser.add_argument("--dataset", default='vim2', help='Dataset (currently vim2, pvc4)')

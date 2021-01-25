@@ -405,6 +405,13 @@ def preprocess_data(loader,
                 else:
                     outputs.append(Y.cpu().detach().numpy())
 
+            if i == 0 and args.autotune:
+                # Tune the batch size to maximize throughput.
+                devices = GPUUtil.getGPUs()
+                multiplier = devices[0].memoryTotal // devices[0].memoryUsed
+                if multiplier > 1:
+                    loader.batch_size *= multiplier
+
         progress_bar.close()
         h5file.close()
     
