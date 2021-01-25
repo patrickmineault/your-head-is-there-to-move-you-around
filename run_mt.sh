@@ -7,7 +7,7 @@ if [ "$1" == "resnet" ]; then
     models=(MotionNet ShiftNet resnet18 mc3_18 r2plus1d_18)
     size=8
 elif [ "$1" == "slowfast" ]; then
-    models=(SlowFast_Fast SlowFast_Slow I3D)
+    models=(I3D)
     size=4
 else
     echo "Unknown type!"
