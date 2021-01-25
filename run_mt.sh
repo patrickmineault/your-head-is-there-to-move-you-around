@@ -37,6 +37,6 @@ do
             --subsample_layers
 
         # Clear cache.
-        rm -f ./cache
+        rm -f ./cache/*
     done
 done
