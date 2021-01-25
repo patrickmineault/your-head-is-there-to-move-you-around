@@ -139,8 +139,9 @@ class MT2(torch.utils.data.Dataset):
             total_frames = 0
             for i, experiment in enumerate(cell_files):
                 all_spks = np.array(experiment['spktimes'])
-                total_spikes += all_spks[all_spks > -1].sum() * experiment['nrepeats']
-                total_frames += (all_spks > -1).sum() * experiment['nrepeats']
+                nonnan_spks = all_spks[~np.isnan(all_spks)]
+                total_spikes += nonnan_spks[nonnan_spks > -1].sum() * experiment['nrepeats']
+                total_frames += (nonnan_spks > -1).sum() * experiment['nrepeats']
 
             mean_spk = total_spikes / total_frames
 
@@ -166,7 +167,7 @@ class MT2(torch.utils.data.Dataset):
 
                     spk = np.array(experiment['spktimes'][start_time+1:end_time])
 
-                    if np.any(spk < 0) or np.any(np.isnan(spk)):
+                    if np.any(np.isnan(spk)) or np.any(spk < 0):
                         # Skip this chunk
                         # print("nan")
                         continue
@@ -203,8 +204,6 @@ class MT2(torch.utils.data.Dataset):
         global cache
         tgt = self.sequence[idx]
 
-        # The images are natively different sizes, grayscale.
-        
         if tgt['images_path'] not in cache:
             f = tables.open_file(tgt['images_path'], 'r')
             X_ = f.get_node('/rawStims')[:].squeeze()
@@ -212,6 +211,7 @@ class MT2(torch.utils.data.Dataset):
 
             cache[tgt['images_path']] = X_
 
+        # The images are natively different sizes, grayscale.
         ims = cache[tgt['images_path']]
         ims = ims[tgt['start_frame']:tgt['end_frame'], :, :].astype(np.float32)
         X = np.stack([ims, ims, ims], axis=0)

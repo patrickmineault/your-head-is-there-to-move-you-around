@@ -40,7 +40,8 @@ class TestMt2Loader(unittest.TestCase):
                            single_cell=0,
                            )
 
-        loader[0]
+        data = loader[0]
+        self.assertEqual(len(data), 4)
 
     def test_disjoint(self):
         loader1 = mt2.MT2('/mnt/e/data_derived/crcns-mt2', nt=32, split='traintune', single_cell=0)
