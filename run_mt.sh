@@ -4,7 +4,8 @@ set -e
 # TODO: figure out what to do about SlowFast_Slow and SlowFast_Fast Slow I3D
 # models=(gaborpyramid3d r3d_18 ShallowMonkeyNet_pvc1 V1Net)
 if [ "$1" == "resnet" ]; then
-    models=(MotionNet ShiftNet resnet18 mc3_18 r2plus1d_18)
+    # there's something broken about ShiftNet right now
+    models=(mc3_18 r2plus1d_18 resnet18)
     size=8
 elif [ "$1" == "slowfast" ]; then
     models=(I3D)
