@@ -217,6 +217,8 @@ class DorsalNet(nn.Module):
                        ('concat', self.concat),
                        ]
 
+        self.conv1 = self.s1.conv1  # Visualize weights
+
     def forward(self, x):
         x0 = self.s1(x)
         x1 = self.res0(x0)

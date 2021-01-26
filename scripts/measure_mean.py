@@ -3,7 +3,8 @@ import numpy as np
 
 import sys
 sys.path.append('../')
-from loaders import pvc4
+import tables
+from loaders import airsim
 
 def main():
     """
@@ -21,6 +22,7 @@ def main():
         ms.append(data.mean())
         ss.append(data.std())
     """
+    """
     files = glob.glob('../data_derived/crcns-v2/*/*/*.imsm')
     ms = []
     ss = []
@@ -36,6 +38,24 @@ def main():
         ss.append(data.std())
     print(np.mean(ms))
     print(np.mean(ss))
+    """
+
+    files = glob.glob('/mnt/e/data_derived/airsim/*/*/*.h5')
+    ms = []
+    ss = []
+    ns = []
+    for filename in files:
+        f = tables.open_file(filename, 'r')
+        data = f.get_node('/videos')[:]
+        print([data.mean(), 
+               data.std(),
+               ])
+        ms.append(data.shape[0] * data.mean())
+        ss.append(data.shape[0] * data.std())
+        ns.append(data.shape[0])
+    print(np.sum(ms) / np.sum(ns))
+    print(np.sum(ss) / np.sum(ns))
+
 
 if __name__ == '__main__':
     main()
