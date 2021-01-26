@@ -23,7 +23,6 @@ from torchvision.models.resnet import resnet18
 from torchvision.models.vgg import vgg19
 from torchvision.models.video import r3d_18, mc3_18, r2plus1d_18
 
-import GPUtil
 
 class Passthrough(nn.Module):
     def __init__(self):
@@ -366,6 +365,8 @@ def tune_batch_size(model, loader, metadata):
     _ = model(X)
 
     # Tune the batch size to maximize throughput.
+    import GPUtil
+
     devices = GPUtil.getGPUs()
     multiplier = devices[0].memoryTotal // devices[0].memoryUsed
 
@@ -596,6 +597,15 @@ def get_feature_model(args):
             ('layer15', model.layer4[1].conv1[2]),
             ('layer16', model.layer4[1].relu)
         ])
+
+        if args.subsample_layers:
+            nums = [0, 1, 2, 4, 6, 8, 10, 12]
+            l = []
+            for i, (layer_name, layer) in enumerate(layers.items()):
+                if i in nums:
+                    l.append((layer_name, layer))
+
+            layers = collections.OrderedDict(l)
 
         metadata = {'sz': 112,
                     'threed': True}
