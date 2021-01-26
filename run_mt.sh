@@ -5,7 +5,7 @@ set -e
 # models=(gaborpyramid3d r3d_18 ShallowMonkeyNet_pvc1 V1Net)
 if [ "$1" == "resnet" ]; then
     # there's something broken about ShiftNet right now
-    models=(ShiftNet mc3_18 r2plus1d_18 resnet18)
+    models=(mc3_18 r2plus1d_18 resnet18)
     size=8
 elif [ "$1" == "slowfast" ]; then
     # Slow, , SlowFast_Fast broken
