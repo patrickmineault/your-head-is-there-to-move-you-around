@@ -1,9 +1,23 @@
 #!/bin/bash
 set -e
 
-# TODO: figure out what to do about SlowFast_Slow and SlowFast_Fast
-#models=(gaborpyramid3d ShallowMonkeyNet_pvc1 ShallowMonkeyNet_pvc4 resnet18 MotionNet ShiftNet Slow I3D r3d_18 mc3_18 r2plus1d_18)
-models=(r3d_18 mc3_18 r2plus1d_18 Slow I3D resnet18)
+# TODO: figure out what to do about SlowFast_Slow and SlowFast_Fast Slow I3D
+# models=(gaborpyramid3d r3d_18 ShallowMonkeyNet_pvc1 V1Net)
+if [ "$1" == "resnet" ]; then
+    # there's something broken about ShiftNet right now
+    models=(ShiftNet mc3_18 r2plus1d_18 resnet18)
+    size=8
+elif [ "$1" == "slowfast" ]; then
+    # Slow, , SlowFast_Fast broken
+    # SlowFast_Slow will stay broken for a bit
+    # Slow is a huge model so it's very slow.
+    models=(SlowFast_Fast I3D)
+    size=8
+else
+    echo "Unknown type!"
+    exit 1
+fi
+
 for model in "${models[@]}";
 do
     for subset in {0..24};
@@ -14,16 +28,19 @@ do
             --features "$model" \
             --subset "$subset" \
             --batch_size 8 \
+            --cache_root ./cache \
             --ckpt_root /storage/checkpoints \
             --data_root /storage/data_derived \
             --slowfast_root /workspace/slowfast \
-            --cache_root /home/paperspace/cache \
             --aggregator downsample \
-            --aggregator_sz 8 \
+            --aggregator_sz $size \
             --pca 500 \
             --no_save \
-            --skip_existing
+            --skip_existing \
+            --subsample_layers \
+            --autotune
+
         # Clear cache.
-        rm -f /home/paperspace/cache/*
+        rm -f ./cache/*
     done
 done
