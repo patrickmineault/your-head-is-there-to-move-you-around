@@ -639,7 +639,18 @@ def get_feature_model(args):
             ('layer16', model.layer4[1]),
         ])
 
-        metadata = {'sz': 224,
+
+        if args.subsample_layers:
+            nums = [0, 1, 2, 4, 6, 8, 10, 12, 14, 16]
+            l = []
+            for i, (layer_name, layer) in enumerate(layers.items()):
+                if i in nums:
+                    l.append((layer_name, layer))
+
+            layers = collections.OrderedDict(l)
+
+        # Note: we downsample here because this is too much.
+        metadata = {'sz': 112,  
                     'threed': False}
     elif args.features in ('SlowFast_Slow', 'SlowFast_Fast', 'Slow', 'I3D'):
         model = SlowFast(args)
@@ -707,8 +718,8 @@ def get_feature_model(args):
     elif args.features in ('MotionNet'):
         model = MotionNet(args)
         layers = collections.OrderedDict([
-            model.relu,
-            model.softmax
+            ('layer00', model.relu),
+            ('layer01', model.softmax),
         ])
 
         metadata = {'sz': 112,
@@ -756,6 +767,24 @@ def get_feature_model(args):
         model = DorsalNet()
         model.load_state_dict(subnet_dict)
         layers = model.layers
+
+        metadata = {'sz': 112,
+                    'threed': True}
+    elif args.features.startswith('airsim'):
+        checkpoints = ['airsim.ckpt-0100000-2021-01-26 00-54-21.846656.pt',  # Early checkpoint of first airsim run
+                       'airsim.ckpt-0742500-2021-01-26 08-35-31.715720.pt',  # Late checkpoint of first airsim run
+                       ]
+        ckpt_path = checkpoints[int(args.features[-2:])]
+        path = os.path.join(args.ckpt_root, ckpt_path)
+        checkpoint = torch.load(path)
+
+        subnet_dict = extract_subnet_dict(checkpoint)
+
+        model = DorsalNet()
+        model.load_state_dict(subnet_dict)
+        layers = collections.OrderedDict(
+            [(f"layer{i:02}", l[-1]) for i, l in enumerate(model.layers)]
+        )
 
         metadata = {'sz': 112,
                     'threed': True}
