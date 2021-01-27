@@ -21,26 +21,9 @@ from torchvision import transforms
 import torchvision.models as models
 import torch.nn.functional as F
 
+from transforms import ThreedGaussianBlur, ThreedExposure
+
 import wandb
-
-class ThreedColorJitter(torch.nn.Module):
-    def __init__(self, brightness=0, contrast=0, saturation=0, hue=0):
-        super().__init__()
-        self.t = transforms.ColorJitter(brightness, contrast, saturation, hue)
-
-    def forward(self, X):
-        return self.t(
-            X.permute(0, 2, 1, 3, 4).reshape(-1, 3, X.shape[-2], X.shape[-1])
-        ).reshape(X.shape[0], X.shape[2], X.shape[1], X.shape[3], X.shape[4]).permute(0, 2, 1, 3, 4)
-
-
-class ThreedGaussianBlur(torch.nn.Module):
-    def __init__(self, kernel_size, sigma=(0.1, 2.0)):
-        super().__init__()
-        self.t = transforms.GaussianBlur(kernel_size, sigma)
-
-    def forward(self, X):
-        return self.t(X.reshape((-1, X.shape[-3], X.shape[-2], X.shape[-1]))).reshape(X.shape)
 
 
 def get_all_layers(net, prefix=[]):
@@ -60,24 +43,33 @@ def save_state(net, title, output_dir):
     torch.save(net.state_dict(), filename)
     return filename
 
+
 def get_dataset(args):
     if args.dataset == 'airsim':
         trainset = airsim.AirSim(os.path.join(args.data_root, 'airsim'), 
-                                    split='train')
+                                    split='train',
+                                    regression=not args.softmax)
 
-        tuneset = airsim.AirSim(os.path.join(args.data_root, 'airsim'))
+        tuneset = airsim.AirSim(
+            os.path.join(args.data_root, 'airsim'),
+            split='tune',
+            regression=not args.softmax)
 
-        transform = transforms.Compose([
-            #ThreedColorJitter(.1, .1, .1, .05),
-            #transforms.ToTensor(),
+        train_transform = transforms.Compose([
             ThreedGaussianBlur(5),
+            transforms.Normalize(123.0, 75.0),
+            ThreedExposure(.3, .3),
         ])
-        #transform = lambda x: x
+
+        eval_transform = transforms.Compose([
+            transforms.Normalize(123.0, 75.0)
+        ])
+
         sz = 112
     else:
         raise NotImplementedError(f"{args.dataset} not implemented")
 
-    return trainset, tuneset, transform, sz
+    return trainset, tuneset, train_transform, eval_transform, sz
 
 
 def log_net(net, layers, writer, n):
@@ -87,22 +79,22 @@ def log_net(net, layers, writer, n):
                             layer.weight.mean(), n)
             writer.add_scalar(f'Weights/{name}/std', 
                             layer.weight.std(), n)
-            #writer.add_histogram(f'Weights/{name}/hist', 
-            #                layer.weight.view(-1), n)
+            writer.add_histogram(f'Weights/{name}/hist', 
+                            layer.weight.view(-1), n)
 
         if hasattr(layer, 'bias') and layer.bias is not None:
             writer.add_scalar(f'Biases/{name}/mean', 
                             layer.bias.mean(), n)
-            #writer.add_histogram(f'Biases/{name}/hist', 
-            #                layer.bias.view(-1), n)
+            writer.add_histogram(f'Biases/{name}/hist', 
+                            layer.bias.view(-1), n)
 
     for name, param in net._parameters.items():
         writer.add_scalar(f'Weights/{name}/mean', 
                         param.mean(), n)
         writer.add_scalar(f'Weights/{name}/std', 
                         param.std(), n)
-        #writer.add_histogram(f'Weights/{name}/hist', 
-        #                param.view(-1), n)
+        writer.add_histogram(f'Weights/{name}/hist', 
+                        param.view(-1), n)
 
     if hasattr(net.subnet, 'conv1'):
         # NCHW
@@ -137,8 +129,10 @@ def get_subnet(args, start_size):
         sz = ((start_size + 1) // 2 + 1) // 2
         nfeats = args.nfeats
 
-    elif args.submodel == 'dorsalnet':
-        subnet = monkeynet.DorsalNet()
+    elif args.submodel.startswith('dorsalnet'):
+        symmetric = 'untied' not in args.submodel
+        subnet = monkeynet.DorsalNet(symmetric=symmetric)
+        
         # Lock in the shallow net features.
         # path = Path(args.ckpt_root) / 'model.ckpt-8700000-2021-01-03 22-34-02.540594.pt'
         # subnet.s1.requires_grad_(False)
@@ -198,7 +192,7 @@ def main(args):
     if device == 'cpu':
         print("No CUDA! Sad!")
 
-    trainset, tuneset, transform, start_sz = get_dataset(args)
+    trainset, tuneset, train_transform, eval_transform, start_sz = get_dataset(args)
     trainloader = torch.utils.data.DataLoader(trainset, 
                                               batch_size=args.batch_size, 
                                               shuffle=True,
@@ -222,7 +216,14 @@ def main(args):
     subnet.to(device=device)
     if args.decoder == 'average':
         net = decoder.Average(subnet, 
-                              5, 
+                              trainset.noutputs,
+                              trainset.nclasses, 
+                              nfeats, 
+                              threed=threed).to(device)
+    if args.decoder == 'center':
+        net = decoder.Center(subnet, 
+                              trainset.noutputs,
+                              trainset.nclasses, 
                               nfeats, 
                               threed=threed).to(device)
     else:
@@ -255,6 +256,11 @@ def main(args):
     net.requires_grad_(True)
     subnet.requires_grad_(True)
 
+    if args.softmax:
+        loss_fun = nn.CrossEntropyLoss()
+    else:
+        loss_fun = nn.MSELoss()
+
     ll, m, n = 0, 0, 0    
     tune_loss = 0.0
     
@@ -271,10 +277,10 @@ def main(args):
                 optimizer.zero_grad()
 
                 # zero the parameter gradients
-                X = transform(X)
+                X = train_transform(X)
                 outputs = net(X)
-
-                loss = ((outputs - labels) ** 2).mean()
+                
+                loss = loss_fun(outputs, labels)
 
                 loss.backward()
                 optimizer.step()
@@ -282,11 +288,16 @@ def main(args):
                 # print statistics
                 running_loss += loss.item()
 
-                label_mean = labels.mean()
-                output_mean = outputs.mean()
+                if not args.softmax:
+                    label_mean = labels.mean()
+                    writer.add_scalar('Labels/mean', label_mean, n)
 
-                writer.add_scalar('Labels/mean', label_mean, n)
+                output_mean = outputs.mean()
                 writer.add_scalar('Outputs/mean', output_mean, n)
+
+                output_std = outputs.std()
+                writer.add_scalar('Outputs/std', output_std, n)
+
                 writer.add_scalar('Loss/train', loss.item(), n)
                 
                 if ll % args.print_frequency == args.print_frequency - 1:
@@ -323,10 +334,10 @@ def main(args):
                         X, labels = tune_data
                         X, labels = X.to(device), labels.to(device)
 
-                        X = transform(X)
+                        X = eval_transform(X)
                         outputs = net(X)
                         
-                        loss = ((outputs - labels) ** 2).mean()
+                        loss = loss_fun(outputs, labels)
 
                         writer.add_scalar('Loss/tune', loss.item(), n)
 
@@ -375,7 +386,6 @@ if __name__ == "__main__":
     parser.add_argument("--decoder", default='average', type=str, help='Decoder model')
     parser.add_argument("--submodel", default='xception2d', type=str, help='Sub-model type (currently, either xception2d, gaborpyramid2d, gaborpyramid3d')
     parser.add_argument("--learning_rate", default=5e-3, type=float, help='Learning rate')
-    parser.add_argument("--learning_rate_outer", default=5e-3, type=float, help='Outer learning rate')
     parser.add_argument("--num_epochs", default=20, type=int, help='Number of epochs to train')
     parser.add_argument("--image_size", default=112, type=int, help='Image size')
     parser.add_argument("--batch_size", default=1, type=int, help='Batch size')
@@ -389,7 +399,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--no_sample", default=False, help='Whether to use a normal gaussian layer rather than a sampled one', action='store_true')
     parser.add_argument("--no_wandb", default=False, help='Skip using W&B', action='store_true')
-    parser.add_argument("--skip_existing", default=True, help='Skip existing runs', action='store_true')
+    parser.add_argument("--skip_existing", default=False, help='Skip existing runs', action='store_true')
+    parser.add_argument("--softmax", default=False, help='Use softmax objective rather than regression', action='store_true')
     
     parser.add_argument("--load_conv1_weights", default='', help="Load conv1 weights in .npy format")
     parser.add_argument("--load_ckpt", default='', help="Load checkpoint")
