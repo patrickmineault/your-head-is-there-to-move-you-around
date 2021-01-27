@@ -165,10 +165,10 @@ class V1Net(nn.Module):
 
 
 class DorsalNet(nn.Module):
-    def __init__(self):
+    def __init__(self, symmetric=True):
         super().__init__()
         self.s1 = ShallowNet(nstartfeats=64, 
-                             symmetric=True,
+                             symmetric=symmetric,
                              dropout_rate=0,
                              weight_norm=False)
 
