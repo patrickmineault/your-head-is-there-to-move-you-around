@@ -138,6 +138,7 @@ runs/
 data/
 data_derived/
 pretrained/
+scripts/figures/
 
 model.pt
 fit_all.bat
