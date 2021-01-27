@@ -773,14 +773,17 @@ def get_feature_model(args):
     elif args.features.startswith('airsim'):
         checkpoints = ['airsim.ckpt-0100000-2021-01-26 00-54-21.846656.pt',  # Early checkpoint of first airsim run
                        'airsim.ckpt-0742500-2021-01-26 08-35-31.715720.pt',  # Late checkpoint of first airsim run
+                       'dorsalnet02.ckpt-0744960-2021-01-26 19-59-03.094205.pt'  # Late checkpoint of second airsim run
                        ]
-        ckpt_path = checkpoints[int(args.features[-2:])]
+        symmetrics = [True, True, False]
+        ckpt_id = int(args.features[-2:])
+        ckpt_path = checkpoints[ckpt_id]
         path = os.path.join(args.ckpt_root, ckpt_path)
         checkpoint = torch.load(path)
 
         subnet_dict = extract_subnet_dict(checkpoint)
 
-        model = DorsalNet()
+        model = DorsalNet(symmetric=symmetrics[ckpt_id])
         model.load_state_dict(subnet_dict)
         layers = collections.OrderedDict(
             [(f"layer{i:02}", l[-1]) for i, l in enumerate(model.layers)]
