@@ -1,5 +1,5 @@
 #!/bin/bash
-# set -e
+set -e
 
 # TODO: figure out what to do about SlowFast_Slow and SlowFast_Fast
 
@@ -135,26 +135,127 @@
 #     rm /mnt/e/cache/*
 # done
 
-for subset in {0..123};
-do
-    for model in gaborpyramid3d gaborpyramid3d_motionless;
-    do
-        python train_convex.py \
-            --exp_name Benchmark \
-            --dataset "pvc1" \
-            --features "$model" \
-            --subset "$subset" \
-            --batch_size 64 \
-            --slowfast_root ../slowfast \
-            --aggregator average \
-            --aggregator_sz 8 \
-            --no_save \
-            --cache_root /mnt/e/cache \
-            --data_root /mnt/e/data_derived \
-            --skip_existing \
-            --consolidated
+# model=dorsalnet
+# for subset in {0..24};
+# do
+#     python train_convex.py \
+#         --exp_name Benchmark \
+#         --dataset "pvc4" \
+#         --features "$model" \
+#         --subset "$subset" \
+#         --batch_size 64 \
+#         --slowfast_root ../slowfast \
+#         --aggregator downsample \
+#         --aggregator_sz 8 \
+#         --pca 500 \
+#         --no_save \
+#         --cache_root /mnt/e/cache \
+#         --data_root /mnt/e/data_derived \
+#         --skip_existing
 
-        # Clear cache.
-        rm /mnt/e/cache/*
-    done
+#     # Clear cache.
+#     rm -f /mnt/e/cache/*
+# done
+
+# for subset in {0..43};
+# do
+#     python train_convex.py \
+#         --exp_name Benchmark \
+#         --dataset "mt2" \
+#         --features "$model" \
+#         --subset "$subset" \
+#         --batch_size 64 \
+#         --slowfast_root ../slowfast \
+#         --aggregator downsample \
+#         --aggregator_sz 8 \
+#         --pca 500 \
+#         --no_save \
+#         --cache_root /mnt/e/cache \
+#         --data_root /mnt/e/data_derived \
+#         --skip_existing
+#     # Clear cache.
+#     rm -f /mnt/e/cache/*
+# done
+
+# model=dorsalnet
+# for subset in s1;
+# do
+#     python train_convex.py \
+#         --exp_name V1Net \
+#         --dataset "vim2_deconv" \
+#         --features "$model" \
+#         --subset "$subset" \
+#         --batch_size 8 \
+#         --slowfast_root ../slowfast \
+#         --aggregator downsample \
+#         --aggregator_sz 8 \
+#         --pca 500 \
+#         --no_save \
+#         --cache_root /mnt/e/cache \
+#         --data_root /mnt/e/data_derived
+# done
+
+# for subset in {0..123};
+# do
+#     python train_convex.py \
+#         --exp_name Benchmark \
+#         --dataset "pvc1" \
+#         --features "$model" \
+#         --subset "$subset" \
+#         --batch_size 64 \
+#         --slowfast_root ../slowfast \
+#         --aggregator average \
+#         --aggregator_sz 8 \
+#         --no_save \
+#         --cache_root /mnt/e/cache \
+#         --data_root /mnt/e/data_derived \
+#         --skip_existing \
+#         --consolidated
+
+#     # Clear cache.
+#     rm -f /mnt/e/cache/*
+# done
+
+model=airsim_02
+for subset in {0..24};
+do
+    python train_convex.py \
+        --exp_name Benchmark \
+        --dataset "pvc4" \
+        --features "$model" \
+        --subset "$subset" \
+        --batch_size 4 \
+        --slowfast_root ../slowfast \
+        --aggregator downsample \
+        --aggregator_sz 8 \
+        --pca 500 \
+        --no_save \
+        --cache_root /mnt/e/cache \
+        --data_root /mnt/e/data_derived \
+        --autotune \
+        --skip_existing
+    # Clear cache.
+    rm -f /mnt/e/cache/*
+done
+
+model=airsim_02
+for subset in s1 s2 s3;
+do
+    python train_convex.py \
+        --exp_name Benchmark \
+        --dataset "vim2" \
+        --features "$model" \
+        --subset "$subset" \
+        --batch_size 4 \
+        --slowfast_root ../slowfast \
+        --aggregator downsample \
+        --aggregator_sz 8 \
+        --pca 500 \
+        --no_save \
+        --cache_root /mnt/e/cache \
+        --data_root /mnt/e/data_derived \
+        --autotune \
+        --skip_existing
+    # Clear cache.
+    rm -f /mnt/e/cache/*
 done
