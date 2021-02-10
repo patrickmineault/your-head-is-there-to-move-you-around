@@ -61,6 +61,7 @@ class Stc1(torch.utils.data.Dataset):
         sequence = [{'idx': i} for i in range(stims.shape[0])]
 
         self.sequence = sequence
+        self.ntau = stim.shape[2]
 
         if len(self.sequence) == 0:
             raise Exception("Didn't find any data")
@@ -69,7 +70,7 @@ class Stc1(torch.utils.data.Dataset):
         # Load a single segment of length idx from disk.
         tgt = self.sequence[idx]
 
-        return (self.stims[tgt['idx'], ...], 
+        return ((self.stims[tgt['idx'], ...].astype(np.float32) - 123.0) / 75.0, 
                 self.responses[tgt['idx'], ...])
 
     def __len__(self):

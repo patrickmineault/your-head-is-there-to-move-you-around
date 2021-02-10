@@ -9,7 +9,7 @@ def generate_starfield_sequences():
 
     # Nominal velocity
     vel = 1  # meters per second
-    nframes = 11
+    nframes = 12
     dot_size = .006 # in meters
     clip_plane = .5
     ndots = 900
@@ -24,7 +24,8 @@ def generate_starfield_sequences():
     Ms = []
     for heading in headings:
         ims = []
-        for i in range(-(nframes//2), (nframes//2) + 1):
+        for i in range(nframes):
+            p = (i - nframes/2) / nframes
             zp  = vel * i / (nframes - 1) / fps * np.cos(heading / 180 * np.pi)
             xp  = vel * i / (nframes - 1) / fps * np.sin(heading / 180 * np.pi)
             val_p = star_pos - np.array([xp, 0, zp]).reshape((1, -1))
@@ -49,7 +50,7 @@ def generate_starfield_sequences():
 
     M = np.stack(Ms, axis=0)
 
-    f = tables.open_file('stc1-starfields.h5', 'w')
+    f = tables.open_file('/mnt/e/data_derived/crcns-stc1/stc1-starfields.h5', 'w')
     f.create_array('/', 'stim', obj=M)
     f.create_array('/', 'labels', obj=np.array(headings))
     f.close()

@@ -17,7 +17,7 @@ class TestAirsimLoader(unittest.TestCase):
                            )
         
         X, Y = loader[0]
-        self.assertEqual(tuple(X.shape), (3, 11, 112, 112))
+        self.assertEqual(tuple(X.shape), (3, 12, 112, 112))
         self.assertEqual(Y.ndim, 1)
         self.assertEqual(Y.size, 129)
 
@@ -28,7 +28,7 @@ class TestAirsimLoader(unittest.TestCase):
                            )
         
         X, Y = loader[0]
-        self.assertEqual(tuple(X.shape), (3, 11, 112, 112))
+        self.assertEqual(tuple(X.shape), (3, 12, 112, 112))
         self.assertEqual(Y.ndim, 1)
         self.assertEqual(Y.size, 95)
 
