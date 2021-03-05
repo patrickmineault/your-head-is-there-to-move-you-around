@@ -127,7 +127,7 @@ class AirSim(torch.utils.data.Dataset):
         global cache
         tgt = self.sequence[idx]
 
-        if tgt["images_path"] not in cache:
+        if tgt["images_path"] not in cache[self.nt]:
             f = tables.open_file(tgt["images_path"], "r")
             if self.nt == 40:
                 X_ = f.get_node("/videos")[:].squeeze()
