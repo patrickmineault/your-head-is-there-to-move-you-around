@@ -8,7 +8,7 @@ import sklearn.random_projection
 import tables
 from tqdm import tqdm
 
-from loaders import pvc4, pvc1, vim2, mt2, stc1, st
+from loaders import pvc4, pvc1, vim2, mt2, stc1, st, mst
 from modelzoo import gabor_pyramid, separable_net
 from modelzoo.motionnet import MotionNet
 from modelzoo.shiftnet import ShiftNet
@@ -60,23 +60,6 @@ def downsample_3d(X, sz):
     return F.interpolate(
         X, size=(X.shape[2], sz, sz), mode="trilinear", align_corners=True
     )
-
-
-"""
-def get_downsampler(X0_shape, X_shape, Y_shape, ntau):
-    downsample_factor = X0_shape[2] // X_shape[2]
-    assert downsample_factor in (1, 2, 4, 8)
-
-    nt = 1
-    t = torch.arange(0, X_shape[2]) * downsample_factor
-    stride = ntau // (nt + 1)
-
-    dt = (X0_shape[2] - ntau) / (Y0_shape[1] - 1)
-
-    for i in range(Y_shape[1]):
-        t0 = (i + 1) * dt
-        (t - t0)
-"""
 
 
 class Downsampler(nn.Module):
@@ -136,63 +119,6 @@ class Downsampler(nn.Module):
                 )
 
             return torch.stack(Xs, axis=1).reshape(-1, Xs[0].shape[-1])
-
-
-class RP(nn.Module):
-    def __init__(self, ncomp, sparse=True):
-        super().__init__()
-        self.downsampler = Downsampler(8)
-        self.ncomp = ncomp
-        self.Ps = {}
-        self.sparse = sparse
-
-    def forward(self, X):
-        X = self.downsampler(X)
-        P = self._get_projection_matrix(X.shape[1], device=X.device)
-        if self.sparse:
-            # Note: Currently, PyTorch does not support matrix multiplication
-            # with the layout signature M[strided] @ M[sparse_coo]
-            result = torch.matmul(P, X.T).T
-        else:
-            result = torch.matmul(X, P)
-
-        return result
-
-    def _get_projection_matrix(self, nfeatures, device):
-        if nfeatures not in self.Ps:
-            if self.sparse:
-                rp = sklearn.random_projection.SparseRandomProjection(
-                    self.ncomp, density=0.05, random_state=0xDEADBEEF
-                )
-
-                mat = rp._make_random_matrix(self.ncomp, nfeatures)
-                coo = mat.tocoo()
-
-                values = coo.data
-                indices = np.vstack((coo.row, coo.col))
-
-                i = torch.LongTensor(indices)
-                v = torch.FloatTensor(values)
-                shape = coo.shape
-
-                i = torch.LongTensor(indices)
-                v = torch.FloatTensor(values)
-                shape = coo.shape
-
-                self.Ps[nfeatures] = torch.sparse_coo_tensor(
-                    i, v, torch.Size(shape), device=device
-                )
-            else:
-                rp = sklearn.random_projection.GaussianRandomProjection(
-                    self.ncomp, random_state=0xDEADBEEF
-                )
-
-                mat = rp._make_random_matrix(self.ncomp, nfeatures)
-                self.Ps[nfeatures] = torch.tensor(
-                    mat.T, dtype=torch.float, device=device
-                )
-
-        return self.Ps[nfeatures]
 
 
 class Averager(nn.Module):
@@ -261,120 +187,6 @@ def resize(movie, width):
         movie, (movie.shape[2], width, width), mode="trilinear", align_corners=False
     )
     return data
-
-
-def preprocess_data_consolidated(
-    loader, model, aggregator, activations, metadata, args
-):
-
-    # Check if cache exists for this model.
-    repo = git.Repo(search_parent_directories=True)
-    sha = repo.head.object.hexsha
-    cache_file = f'{args.features}_{metadata["sz"]}_{args.dataset}_{args.subset}_{loader.dataset.split}_{args.aggregator}_cons_{sha}.h5'
-    cache_file = os.path.join(args.cache_root, cache_file)
-
-    if not os.path.exists(cache_file):
-        print("Create cache file")
-        h5file = tables.open_file(cache_file, mode="w", title="Cache file")
-        layers = {}
-        outputs = None
-        nrows = len(loader) * loader.batch_size
-
-        progress_bar = tqdm(total=len(loader), unit="batches", unit_scale=True)
-
-        for i, loaded in enumerate(loader):
-            if len(loaded) == 2:
-                X, Y = loaded
-            else:
-                X, _, _, Y = loaded
-
-                # So the order of the indices matches the order in vim2
-                Y = Y.permute(0, 2, 1)
-
-            progress_bar.update(1)
-            X, Y = X.to(device="cuda"), Y.to(device="cuda")
-
-            with torch.no_grad():
-                X = resize(X, metadata["sz"])
-                if metadata["threed"]:
-                    result = model(X)
-
-                    for layer in activations.keys():
-                        try:
-                            fit_layer = (
-                                aggregator(
-                                    (
-                                        activations[layer],
-                                        X.shape,
-                                        Y.shape,
-                                        loader.dataset.ntau,
-                                    )
-                                )
-                                .cpu()
-                                .detach()
-                                .numpy()
-                            )
-                        except NotImplementedError:
-                            # This is because the output is too small, so the aggregator doesn't work.
-                            continue
-
-                        if outputs is None:
-                            layers[layer] = h5file.create_earray(
-                                "/", f"layer{layer}", obj=fit_layer, expectedrows=nrows
-                            )
-                        else:
-                            layers[layer].append(fit_layer)
-                else:
-                    result = model(
-                        X.permute(0, 2, 1, 3, 4).reshape(
-                            -1, X.shape[1], X.shape[3], X.shape[4]
-                        )
-                    )
-
-                    for layer in activations.keys():
-                        fit_layer = activations[layer]
-                        fit_layer = fit_layer.reshape(
-                            X.shape[0], X.shape[2], *fit_layer.shape[1:]
-                        )
-                        fit_layer = fit_layer.permute(0, 2, 1, 3, 4)
-                        fit_layer = aggregator(fit_layer).cpu().detach().numpy()
-
-                        if outputs is None:
-                            layers[layer] = h5file.create_earray(
-                                "/", f"layer{layer}", obj=fit_layer, expectedrows=nrows
-                            )
-                        else:
-                            layers[layer].append(fit_layer)
-
-                # Y = Y.permute(1, 0, 2).reshape(-1, Y.shape[2])
-                Y = Y.reshape(-1, Y.shape[2])
-
-                if outputs is None:
-                    outputs = h5file.create_earray(
-                        "/",
-                        f"outputs",
-                        obj=Y.cpu().detach().numpy(),
-                        expectedrows=nrows,
-                    )
-                else:
-                    outputs.append(Y.cpu().detach().numpy())
-
-        progress_bar.close()
-        h5file.close()
-
-    h5file = tables.open_file(cache_file, mode="r")
-    try:
-        X = torch.tensor(h5file.get_node(f"/layer{args.layer_name}")[:], device="cpu")
-    except tables.exceptions.NoSuchNodeError:
-        h5file.close()
-        return None, None
-    Y = torch.tensor(
-        h5file.get_node(f"/outputs")[:], device="cpu", dtype=torch.float
-    ).squeeze()
-    if Y.ndim == 1:
-        Y = Y.reshape(-1, 1)
-    h5file.close()
-    return X, Y
 
 
 def tune_batch_size(model, loader, metadata):
@@ -463,9 +275,11 @@ def preprocess_data(loader, model, aggregator, activations, metadata, args):
                             layers[layer].append(fit_layer)
                 else:
                     result = model(
+                        # batch, channel, time, ny, nx
                         X.permute(0, 2, 1, 3, 4).reshape(
                             -1, X.shape[1], X.shape[3], X.shape[4]
                         )
+                        # batch* time, channel, ny, nx
                     )
 
                     for layer in activations.keys():
@@ -473,7 +287,10 @@ def preprocess_data(loader, model, aggregator, activations, metadata, args):
                         fit_layer = fit_layer.reshape(
                             X.shape[0], X.shape[2], *fit_layer.shape[1:]
                         )
+
+                        # batch, time, channel, ny, nx
                         fit_layer = fit_layer.permute(0, 2, 1, 3, 4)
+                        # batch, channel, time_sub, ny_sub, nx_sub
                         fit_layer = aggregator(fit_layer).cpu().detach().numpy()
 
                         if outputs is None:
@@ -516,17 +333,12 @@ def get_aggregator(metadata, args):
         return Averager()
     elif args.aggregator == "downsample":
         return Downsampler(args.aggregator_sz)
-    elif args.aggregator == "rp":
-        return RP(args.aggregator_sz, sparse=True)
     else:
         raise NotImplementedError(f"Aggregator {args.aggregator} not implemented.")
 
 
 def get_dataset(args, fold):
-    if args.consolidated:
-        nt = 9
-    else:
-        nt = 1
+    nt = 1
 
     # SlowFast_Fast has a limitation that it doesn't work with small inputs,
     # so fudge things here.
@@ -616,6 +428,14 @@ def get_dataset(args, fold):
         data = st.St(
             os.path.join(args.data_root, "packlab-st"), split=fold, subset="V3A"
         )
+    elif args.dataset == "mst":
+        data = mst.MST(
+            os.path.join(args.data_root, "packlab-mst"),
+            split=fold,
+            nt=nt,
+            ntau=ntau,
+            single_cell=int(args.subset),
+        )
     else:
         raise NotImplementedError(f"{args.dataset} implemented")
 
@@ -692,8 +512,13 @@ def get_feature_model(args):
         layers = [
             layer for layer in model.features if layer.__repr__().startswith("ReLU")
         ]
+        layers = layers[:-4]
+        layers = collections.OrderedDict(
+            [(f"layer{num:02}", layer) for num, layer in enumerate(layers)]
+        )
 
         metadata = {"sz": 224, "threed": False}
+
     elif args.features in ("resnet18"):
         model = resnet18(pretrained=True)
 
@@ -732,7 +557,7 @@ def get_feature_model(args):
         metadata = {"sz": 112, "threed": False}
     elif args.features in ("SlowFast_Slow", "SlowFast_Fast", "Slow", "I3D"):
         from modelzoo.slowfast_wrapper import SlowFast
-        
+
         model = SlowFast(args)
 
         if args.features == "SlowFast_Fast":
@@ -863,8 +688,10 @@ def get_feature_model(args):
             "airsim.ckpt-0100000-2021-01-26 00-54-21.846656.pt",  # Early checkpoint of first airsim run
             "airsim.ckpt-0742500-2021-01-26 08-35-31.715720.pt",  # Late checkpoint of first airsim run
             "dorsalnet02.ckpt-0744960-2021-01-26 19-59-03.094205.pt",  # Late checkpoint of second airsim run
+            "airsim_dorsalnet_batch2_model.ckpt-0640000-2021-02-11 21-00-20.761211.pt",  # Early checkpoint of batch2 of airsim generated data
+            "airsim_dorsalnet_batch2_model.ckpt-3174400-2021-02-12 02-03-29.666899.pt",  # Late checkpoint of batch2 of airsim generated data
         ]
-        symmetrics = [True, True, False]
+        symmetrics = [True, True, False, False, False]
         ckpt_id = int(args.features[-2:])
         ckpt_path = checkpoints[ckpt_id]
         path = os.path.join(args.ckpt_root, ckpt_path)
