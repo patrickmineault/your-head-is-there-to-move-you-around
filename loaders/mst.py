@@ -50,6 +50,7 @@ class MST(torch.utils.data.Dataset):
         ntau=10,
         split="train",
         single_cell=-1,
+        norm_scheme="neutralbg",
     ):
 
         if nt != 1 or ntau != 10:
@@ -146,6 +147,7 @@ class MST(torch.utils.data.Dataset):
 
         #
         self.offset = 0
+        self.norm_scheme = norm_scheme
 
         assert self.total_electrodes > 0
 
@@ -189,10 +191,14 @@ class MST(torch.utils.data.Dataset):
         W = np.zeros((self.total_electrodes))
         W[tgt["cellnum"] + self.offset] = 1.0  # max(w, .1)
 
+        # channel, time, ny, nx
         X = stim[tgt["stim_idx"], ...]
         X = np.concatenate([X, X, X], axis=0)
 
-        X = (X.astype(np.float32) - 123) / 75
+        if self.norm_scheme == "neutralbg":
+            X = (X.astype(np.float32)) / 100.0
+        elif self.norm_scheme == "airsim":
+            X = (X.astype(np.float32) - 123.0) / 75.0
 
         return (X, M, W, Y)
 
