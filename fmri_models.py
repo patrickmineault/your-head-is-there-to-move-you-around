@@ -428,13 +428,23 @@ def get_dataset(args, fold):
         data = st.St(
             os.path.join(args.data_root, "packlab-st"), split=fold, subset="V3A"
         )
-    elif args.dataset == "mst":
+    elif args.dataset == "mst_norm_airsim":
         data = mst.MST(
             os.path.join(args.data_root, "packlab-mst"),
             split=fold,
             nt=nt,
             ntau=ntau,
             single_cell=int(args.subset),
+            norm_scheme="airsim",
+        )
+    elif args.dataset == "mst_norm_neutralbg":
+        data = mst.MST(
+            os.path.join(args.data_root, "packlab-mst"),
+            split=fold,
+            nt=nt,
+            ntau=ntau,
+            single_cell=int(args.subset),
+            norm_scheme="neutralbg",
         )
     else:
         raise NotImplementedError(f"{args.dataset} implemented")
