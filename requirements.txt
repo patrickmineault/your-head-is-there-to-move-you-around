@@ -4,6 +4,7 @@ pandas
 python-dict-wrapper
 scipy
 seaborn
+scikit-image
 sklearn
 tables
 tqdm
