@@ -5,6 +5,7 @@ import os
 import sklearn
 import sklearn.decomposition
 import sklearn.random_projection
+import sys
 import tables
 from tqdm import tqdm
 
@@ -446,6 +447,15 @@ def get_dataset(args, fold):
             single_cell=int(args.subset),
             norm_scheme="neutralbg",
         )
+    elif args.dataset == "mst_norm_cpc":
+        data = mst.MST(
+            os.path.join(args.data_root, "packlab-mst"),
+            split=fold,
+            nt=nt,
+            ntau=ntau,
+            single_cell=int(args.subset),
+            norm_scheme="cpc",
+        )
     else:
         raise NotImplementedError(f"{args.dataset} implemented")
 
@@ -716,7 +726,25 @@ def get_feature_model(args):
         )
 
         metadata = {"sz": 112, "threed": True}
+    elif args.features == "cpc":
+        sys.path.append("../CPC/dpc")
+        sys.path.append("../CPC/backbone")
+        from model_3d import DPC_RNN
 
+        model = DPC_RNN(
+            sample_size=64, num_seq=8, seq_len=5, network="monkeynet", pred_step=3
+        )
+        checkpoint = torch.load(
+            os.path.join(args.ckpt_root, "cpc-model_best_epoch99.pth.tar")
+        )
+        subnet_dict = extract_subnet_dict(checkpoint["state_dict"])
+
+        model.load_state_dict(subnet_dict)
+        model = model.backbone
+        layers = collections.OrderedDict(
+            [(f"layer{i:02}", l[-1]) for i, l in enumerate(model.layers)]
+        )
+        metadata = {"sz": 112, "threed": True}
     else:
         raise NotImplementedError("Model not implemented yet")
 
@@ -733,7 +761,7 @@ def get_feature_model(args):
 def extract_subnet_dict(d):
     out = {}
     for k, v in d.items():
-        if k.startswith("subnet."):
+        if k.startswith("subnet.") or k.startswith("module."):
             out[k[7:]] = v
 
     return out
