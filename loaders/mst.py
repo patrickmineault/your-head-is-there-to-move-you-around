@@ -102,8 +102,6 @@ class MST(torch.utils.data.Dataset):
 
             all_spks = all_spks.squeeze()
             assert np.all(np.diff(rg) == 1)
-            print(Xidx.shape)
-            print(all_spks.shape)
             nskip = nt
 
             n = 0
@@ -138,6 +136,8 @@ class MST(torch.utils.data.Dataset):
 
             assert n > 0
             n_electrodes += 1
+            # print(f.get_node("/corr_multiplier").read())
+            self.max_r = 1 / f.get_node("/corr_multiplier").read()
             f.close()
 
         self.sequence = sequence
@@ -199,6 +199,8 @@ class MST(torch.utils.data.Dataset):
             X = (X.astype(np.float32)) / 100.0
         elif self.norm_scheme == "airsim":
             X = (X.astype(np.float32) - 123.0) / 75.0
+        elif self.norm_scheme == "cpc":
+            X = (X.astype(np.float32) - 0.48) / 0.225
 
         return (X, M, W, Y)
 
