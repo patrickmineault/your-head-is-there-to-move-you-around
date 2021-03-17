@@ -16,6 +16,8 @@ from fmri_models import (
     tune_batch_size,
 )
 
+from convex_models import compute_ridge_estimate, compute_boosting_estimate
+
 from research_code.cka_step4 import cka
 
 import torch
@@ -58,7 +60,14 @@ def save_to_wandb(results, weights, args, offline=False):
 
 
 def compute_layer(
-    trainloader, reportloader, feature_model, aggregator, activations, metadata, args
+    trainloader,
+    reportloader,
+    feature_model,
+    aggregator,
+    activations,
+    metadata,
+    args,
+    max_r,
 ):
     print(f"Processing layer {args.layer_name}")
     t0 = time.time()
@@ -71,13 +80,16 @@ def compute_layer(
         print(f"Skipping layer {args.layer_name}")
         return
 
-    print(X.shape)
-    print(Y.shape)
+    # Use k-fold cross-validation
+    kfold = 5
+    lambdas = np.logspace(0, 5, num=11)
+    splits = (np.arange(X.shape[0]) / 100).astype(np.int) % kfold
 
     m = X.mean(axis=0, keepdims=True)
     s = X.std(axis=0, keepdims=True) + ff
 
     Ym = Y.mean(axis=0, keepdims=True)
+    Y = Y - Ym
 
     # Use in-place operators instead of (X - m) / s to save memory.
     X.add_(-m)
@@ -87,122 +99,41 @@ def compute_layer(
         V = get_projection_matrix(X, n=args.pca)
         X = torch.matmul(X, V)
 
-    Y = Y - Ym
-    Y = Y.to(device="cuda")
-    X = X.to(device="cuda")
-
-    print(X.std(axis=0)[:10])
-
-    # Use k-fold cross-validation
-    kfold = 5
-    lambdas = np.logspace(0, 5, num=11)
-    splits = (np.arange(X.shape[0]) / 100).astype(np.int) % kfold
-
-    # Store predictions in main memory to prevent out-of-memory errors.
-    Y_preds = torch.zeros(Y.shape[0], Y.shape[1], len(lambdas))
-
-    for i in range(kfold):
-        X_train, Y_train, X_test = (
-            X[splits != i, :],
-            Y[splits != i, :],
-            X[splits == i, :],
-        )
-        C = X_train.T.matmul(X_train)
-
-        for j, lambda_ in enumerate(lambdas):
-            H = C + lambda_ * torch.eye(X_train.shape[1], device="cuda")
-            w = torch.inverse(H).matmul(X_train.T.matmul(Y_train))
-            # w = torch.linalg.solve(H, X_train.T @ Y_train)
-            # w, _ = torch.solve(X_train.T @ Y_train, H)
-            Y_pred = X_test.matmul(w)
-            Y_preds[splits == i, :, j] = Y_pred.to(device="cpu")
-
-    Y = Y.to(device="cpu")
-    var_baseline = ((Y - Y.mean(axis=0, keepdims=True)) ** 2).mean(0)
-    var_after = ((Y.reshape(Y.shape[0], Y.shape[1], 1) - Y_preds) ** 2).mean(0)
-    r2_cvs = 1 - var_after / var_baseline.reshape((-1, 1))
-
-    # Now we find the best lambdas
-    best_lambdas = lambdas[np.argmax(r2_cvs, axis=1)]
-
-    assert best_lambdas.size == Y.shape[1]
-
-    # this is in case there's only one output. This is a no-op when best_lambdas
-    # is an array already.
-    best_lambdas = np.array(best_lambdas)
-    r2_cv = np.array([r2_cvs[j, i] for j, i in enumerate(np.argmax(r2_cvs, axis=1))])
-
     X_report, Y_report = preprocess_data(
         reportloader, feature_model, aggregator, activations, metadata, args
     )
 
-    # Compute CKA for report fold
-    cka_report = cka(X_report, Y_report)
+    if X is None:
+        print(f"Skipping layer {args.layer_name}")
+        return
 
-    X_report = (X_report - m) / s
+    Y_report = Y_report - Ym
+
+    # Use in-place operators instead of (X - m) / s to save memory.
+    X_report.add_(-m)
+    X_report.divide_(s)
 
     if args.pca > -1:
         X_report = torch.matmul(X_report, V)
 
-    Y_report = Y_report - Ym
-    X_report = X_report.to(device="cuda")
-    Y_report = Y_report.to(device="cuda")
+    if args.method == "ridge":
+        results, weights = compute_ridge_estimate(X, Y, X_report, Y_report, splits)
+    elif args.method == "boosting":
+        results, weights = compute_boosting_estimate(X, Y, X_report, Y_report, splits)
+    else:
+        raise NotImplementedError("Method not implemented")
 
-    best_lambda_vals = np.unique(best_lambdas)
+    cka_report = cka(X_report, Y_report)
 
-    Y_preds = torch.zeros(Y_report.shape, device="cuda")
+    if not args.save_predictions:
+        del weights["Y_preds"]
 
-    best_W = np.zeros((X.shape[1], Y_report.shape[1]))
-    Y = Y.to(device="cuda")
-
-    C = X.T.matmul(X)
-    for lambda_ in best_lambda_vals:
-        H = C + lambda_ * torch.eye(X.shape[1], device="cuda")
-        w = torch.inverse(H).matmul(X.T.matmul(Y))
-        # This would be ideal, but it's not in torch stable yet.
-        # w = torch.linalg.solve(H, X.T @ Y)
-        # w, _ = torch.solve(X.T @ Y, H)
-        Y_pred = X_report.matmul(w)
-        to_replace = best_lambdas == lambda_
-
-        # In case to_replace is a scalar
-        to_replace = to_replace.reshape(to_replace.size)
-
-        Y_preds[:, to_replace] = Y_pred[:, to_replace]
-        best_W[:, to_replace] = w[:, to_replace].cpu().detach().numpy()
-
-    var_baseline = ((Y_report - Y_report.mean(axis=0, keepdims=True)) ** 2).mean(0)
-    var_after = ((Y_report - Y_preds) ** 2).mean(0)
-    r2_report = 1 - var_after / var_baseline
-
-    corrs_report = compute_corr(Y_report, Y_preds)
-
-    weights = {
-        "W": best_W,
-        "m": m.squeeze().cpu().detach().numpy(),
-        "s": s.squeeze().cpu().detach().numpy(),
-    }
-
-    if args.pca > -1:
-        weights["V"] = V
-
-    if args.save_predictions:
-        weights["Y_preds"] = Y_preds
-
-    results = {
-        "r2_cvs": r2_cvs.cpu().detach().numpy(),
-        "r2_report": r2_report.cpu().detach().numpy(),
-        "corrs_report": corrs_report.cpu().detach().numpy(),
-        "corrs_report_mean": corrs_report.cpu().detach().numpy().mean(),
-        "corrs_report_median": np.median(corrs_report.cpu().detach().numpy()),
-        "w_shape": w.shape,
-        "feature_mean": m.squeeze().cpu().detach().numpy(),
-        "feature_std": s.squeeze().cpu().detach().numpy(),
-        "fit_time": time.time() - t0,
-        "cka_report": cka_report.item(),
-        "layer": args.layer,
-        "subset": args.subset,
-    }
+    results["feature_mean"] = m.squeeze().cpu().detach().numpy()
+    results["fit_time"] = time.time() - t0
+    results["cka_report"] = cka_report.item()
+    results["layer"] = args.layer
+    results["subset"] = args.subset
+    results["max_r"] = max_r
 
     if not args.no_wandb:
         try:
@@ -228,6 +159,7 @@ def check_existing(args, metadata):
                 {"config.pca": args.pca},
                 {"config.features": args.features},
                 {"config.subset": args.subset},
+                {"config.method": args.method},
                 {"state": "finished"},
             ]
         },
@@ -252,6 +184,12 @@ def main(args):
 
     trainset = get_dataset(args, "traintune")
     reportset = get_dataset(args, "report")
+
+    if hasattr(trainset, "max_r"):
+        # Store it in the dataset
+        max_r = trainset.max_r
+    else:
+        max_r = 1.0
 
     args.ntau = trainset.ntau
     feature_model, activations, metadata = get_feature_model(args)
@@ -290,6 +228,7 @@ def main(args):
             activations,
             metadata,
             args,
+            max_r,
         )
 
 
@@ -370,6 +309,11 @@ if __name__ == "__main__":
         "--ckpt_root",
         default="./pretrained",
         help="Path where trained model checkpoints will be downloaded",
+    )
+    parser.add_argument(
+        "--method",
+        default="ridge",
+        help="Method to fit the model (ridge or boosting)",
     )
 
     args = parser.parse_args()
