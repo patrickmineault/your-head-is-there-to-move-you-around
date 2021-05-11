@@ -10,12 +10,16 @@ from tqdm import tqdm
 import tables
 from skimage.transform import rescale, resize, downscale_local_mean
 
+import sys
 
-def generate_supertune_sequence(f):
+sys.path.append("../")
+from derive_dataset import get_max_r2
+
+
+def generate_supertune_sequence(f, nframes=10):
     # Nominal framerate
     fps = 30
     sz = 448
-    nframes = 10
     ds = 4  # Downsample by what factor.
 
     # The paper says .1 degrees diameter. However, I measured .4 degrees in a video from
@@ -74,14 +78,30 @@ def generate_supertune_sequence(f):
                 speed_mult * yv[ypos.astype(np.int) % sz, xpos.astype(np.int) % sz]
             )
 
+            # Now render the field.
             img = np.zeros((sz, sz), dtype=np.uint8)
-            for x_, y_ in zip(star_pos[:, 0], star_pos[:, 1]):
-                if x_ < 0 or y_ < 0 or x_ >= sz or y_ >= sz:
-                    continue
+            rr, cc = disk(
+                (img.shape[0] // 2, img.shape[1] // 2), disk_sz, shape=img.shape
+            )
+            rr = rr - img.shape[0] // 2
+            cc = cc - img.shape[1] // 2
 
-                if mask[int(y_), int(x_)]:
-                    rr, cc = disk((y_, x_), disk_sz, shape=img.shape)
-                    img[rr, cc] = 255
+            dotr = (star_pos[:, 1].reshape((-1, 1)) + rr.reshape((1, -1))).ravel()
+            dotc = (star_pos[:, 0].reshape((-1, 1)) + cc.reshape((1, -1))).ravel()
+
+            validx = (
+                (dotr >= 0)
+                & (dotr < img.shape[0])
+                & (dotc >= 0)
+                & (dotc < img.shape[1])
+            )
+
+            dotr = dotr[validx].astype(np.int)
+            dotc = dotc[validx].astype(np.int)
+
+            img = np.zeros((sz, sz), dtype=np.uint8)
+            img[dotr, dotc] = 255
+            img = img * mask
 
             img = (
                 img.reshape((sz // ds, ds, sz // ds, ds))
@@ -153,17 +173,31 @@ def generate_hyperflow_sequence(f):
         yv = -np.array(Image.fromarray(stim[:, :, 1]).resize((sz, sz), Image.BILINEAR))
 
         # Apply a mask.
-        mask = (abs(xv) + abs(yv)) > 0
+        mask = np.array(
+            Image.fromarray(
+                (255 * (abs(stim[:, :, 0]) + abs(stim[:, :, 1]) > 0).astype(np.uint8))
+            ).resize((sz, sz), Image.BILINEAR)
+        )
+
+        # Apply a mask. Note the inherent mask smoothing.
+        mask = mask > 64
+
+        # Apply a mask.
         vidx, hidx = np.nonzero(mask)
 
         if frame == 0:
             # Sample positions with replacement.
-            dot_idx = np.random.randint(0, len(vidx), ndots)
-            assert len(dot_idx) == ndots
+            if len(vidx) > 0:
+                dot_idx = np.random.randint(0, len(vidx), ndots)
 
-            star_pos = np.zeros((ndots, 2), dtype=np.float)
-            star_pos[:, 0] = hidx[dot_idx]
-            star_pos[:, 1] = vidx[dot_idx]
+                assert len(dot_idx) == ndots
+
+                star_pos = np.zeros((ndots, 2), dtype=np.float)
+                star_pos[:, 0] = hidx[dot_idx]
+                star_pos[:, 1] = vidx[dot_idx]
+            else:
+                # Occasionally, the first frame may be empty.
+                star_pos = np.zeros((ndots, 2), dtype=np.float)
         else:
             # Replace expired dots.
             replace_idx = (
@@ -200,13 +234,23 @@ def generate_hyperflow_sequence(f):
 
         # Now render the field.
         img = np.zeros((sz, sz), dtype=np.uint8)
-        for x_, y_ in zip(star_pos[:, 0], star_pos[:, 1]):
-            if x_ < 0 or y_ < 0 or x_ >= sz or y_ >= sz:
-                continue
+        rr, cc = disk((img.shape[0] // 2, img.shape[1] // 2), disk_sz, shape=img.shape)
+        rr = rr - img.shape[0] // 2
+        cc = cc - img.shape[1] // 2
 
-            if mask[int(y_), int(x_)]:
-                rr, cc = disk((y_, x_), disk_sz, shape=img.shape)
-                img[rr, cc] = 255
+        dotr = (star_pos[:, 1].reshape((-1, 1)) + rr.reshape((1, -1))).ravel()
+        dotc = (star_pos[:, 0].reshape((-1, 1)) + cc.reshape((1, -1))).ravel()
+
+        validx = (
+            (dotr >= 0) & (dotr < img.shape[0]) & (dotc >= 0) & (dotc < img.shape[1])
+        )
+
+        dotr = dotr[validx].astype(np.int)
+        dotc = dotc[validx].astype(np.int)
+
+        img = np.zeros((sz, sz), dtype=np.uint8)
+        img[dotr, dotc] = 255
+        img = img * mask
 
         # ds-fold antialiasing.
         img = (
@@ -251,6 +295,42 @@ def generate_matched_sequence(f, stem):
     fout.create_array("/", "Y_report", obj=Y_st)
     fout.create_array("/", "Yall_report", obj=Y_st)
     fout.create_array("/", "corr_multiplier", obj=corr_multiplier)
+
+    fout.close()
+
+
+def generate_unmatched_sequence(f, stem):
+    X_hf, Xidx_hf, Y_hf = generate_hyperflow_sequence(f)
+    Y_hf = Y_hf.T
+    assert Xidx_hf.shape[0] == Y_hf.shape[0]
+
+    t = f.get_node("/t")[:].ravel()
+
+    # Designate a certain proportion of the sequence as the train set and tune
+    # set.
+
+    block_len = 6  # in seconds
+    framerate = 30
+    nfolds = 10
+
+    reportidx = (np.floor(t / block_len) % nfolds) == 4
+
+    fout = tables.open_file(f"/mnt/e/data_derived/packlab-dorsal/{stem}.h5", "w")
+    fout.create_array("/", "X_traintune", obj=X_hf)
+    fout.create_array("/", "Xidx_traintune", obj=Xidx_hf[~reportidx, :])
+    fout.create_array("/", "Y_traintune", obj=Y_hf[~reportidx, :])
+
+    Xidx_report = Xidx_hf[reportidx, :]
+    Y_report = Y_hf[reportidx, :]
+
+    fout.create_array("/", "X_report", obj=X_hf)
+    fout.create_array("/", "Xidx_report", obj=Xidx_report)
+    fout.create_array("/", "Y_report", obj=Y_report)
+
+    fout.create_array("/", "arealabels", obj=f.get_node("/arealabels")[:])
+    fout.create_array("/", "autocorr", obj=f.get_node("/autocorr")[:])
+    fout.create_array("/", "neuronid", obj=f.get_node("/neuronid")[:])
+
     fout.close()
 
 
@@ -265,5 +345,65 @@ def generate_matched_sequences():
         f.close()
 
 
+def generate_unmatched_sequences():
+    files = Path("/mnt/e/Documents/packlab-hf/exporteddesigns").glob("*.mat")
+    files = sorted(files)
+
+    for filename in tqdm(files):
+        f = tables.open_file(filename)
+        generate_unmatched_sequence(f, filename.stem)
+        f.close()
+
+
+def get_all_maxr2():
+    files = Path("/mnt/e/data_derived/packlab-mst/").glob("*.mat")
+    files = sorted(files)
+
+    maxr2s = []
+    iccs = []
+    for filename in tqdm(files):
+        f = tables.open_file(filename)
+        if f.get_node("/stmatcheshf")[:]:
+            # _ = generate_matched_sequence(f, filename.stem)
+            _, _, _, Yall_st = generate_supertune_sequence(f)
+            assert Yall_st.shape[0] > Yall_st.shape[1]
+
+            icc = []
+            for i in range(Yall_st.shape[1]):
+                sel = np.ones(Yall_st.shape[1]) == 1
+                sel[i] = False
+                icc.append(
+                    np.corrcoef(Yall_st[:, sel].mean(axis=1), Yall_st[:, i])[0, 1],
+                )
+
+            iccs.append(np.mean(icc))
+
+            themaxr2 = get_max_r2(
+                Yall_st.T.reshape((-1, Yall_st.shape[1], Yall_st.shape[0]))
+            )
+
+            maxr2s.append(themaxr2)
+
+        f.close()
+
+    print(maxr2s)
+    print(iccs)
+
+
+def generate_long_sequence():
+    f = tables.open_file(f"/mnt/e/data_derived/packlab-mst/ju337.mat", "r")
+    X_st, Xidx_st, Y_st, Yall_st = generate_supertune_sequence(f, 40)
+    f.close()
+
+    fout = tables.open_file(f"/mnt/d/Documents/brain-scorer/scripts/st.h5", "w")
+    fout.create_array("/", "X_report", obj=X_st)
+    fout.create_array("/", "Xidx_report", obj=Xidx_st)
+    fout.create_array("/", "Y_report", obj=Y_st)
+    fout.close()
+
+
 if __name__ == "__main__":
-    generate_matched_sequences()
+    # generate_matched_sequences()
+    # get_all_maxr2()
+    # generate_unmatched_sequences()
+    generate_long_sequence()
