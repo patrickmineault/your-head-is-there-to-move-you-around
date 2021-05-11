@@ -154,3 +154,5 @@ motion-net.filter.html
 
 html/*
 html/images
+
+*.npy

@@ -2,9 +2,8 @@ from torch import nn
 
 
 class Average(nn.Module):
-    def __init__(self, subnet, noutputs, nclasses, nfeats, threed):
+    def __init__(self, noutputs, nclasses, nfeats, threed):
         super().__init__()
-        self.subnet = subnet
         self.noutputs = noutputs
         self.nclasses = nclasses
         self.nfeats = nfeats
@@ -14,7 +13,6 @@ class Average(nn.Module):
         )
 
     def forward(self, X):
-        X = self.subnet(X)
         Xs = X.mean(axis=4).mean(axis=3).mean(axis=2)
 
         assert Xs.ndim == 2
@@ -26,9 +24,8 @@ class Average(nn.Module):
 
 
 class Point(nn.Module):
-    def __init__(self, subnet, noutputs, nclasses, nfeats, threed):
+    def __init__(self, noutputs, nclasses, nfeats, threed):
         super().__init__()
-        self.subnet = subnet
         self.noutputs = noutputs
         self.nclasses = nclasses
         self.nfeats = nfeats
@@ -38,7 +35,6 @@ class Point(nn.Module):
         )
 
     def forward(self, X):
-        X = self.subnet(X)
         ct, cy, cx = (
             X.shape[2] // 2,
             X.shape[3] // 2,
@@ -55,9 +51,8 @@ class Point(nn.Module):
 
 
 class Center(nn.Module):
-    def __init__(self, subnet, noutputs, nclasses, nfeats, threed):
+    def __init__(self, noutputs, nclasses, nfeats, threed):
         super().__init__()
-        self.subnet = subnet
         self.noutputs = noutputs
         self.nclasses = nclasses
         self.nfeats = nfeats
@@ -67,7 +62,6 @@ class Center(nn.Module):
         )
 
     def forward(self, X):
-        X = self.subnet(X)
         ct, cy, cx = (
             X.shape[2] // 2,
             slice(X.shape[3] // 4, int(3 * X.shape[3] / 4)),

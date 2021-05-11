@@ -81,7 +81,7 @@ def get_dataset(args):
     return trainset, tuneset, train_transform, eval_transform, sz
 
 
-def log_net(net, layers, writer, n):
+def log_net(net, subnet, layers, writer, n):
     for name, layer in layers:
         if hasattr(layer, "weight"):
             writer.add_scalar(f"Weights/{name}/mean", layer.weight.mean(), n)
@@ -97,18 +97,16 @@ def log_net(net, layers, writer, n):
         writer.add_scalar(f"Weights/{name}/std", param.std(), n)
         writer.add_histogram(f"Weights/{name}/hist", param.view(-1), n)
 
-    if hasattr(net.subnet, "conv1"):
+    if hasattr(subnet, "conv1"):
         # NCHW
-        if net.subnet.conv1.weight.ndim == 4:
-            writer.add_images(
-                "Weights/conv1d/img", 0.25 * net.subnet.conv1.weight + 0.5, n
-            )
+        if subnet.conv1.weight.ndim == 4:
+            writer.add_images("Weights/conv1d/img", 0.25 * subnet.conv1.weight + 0.5, n)
         else:
             # NTCHW
-            scale = 0.5 / abs(net.subnet.conv1.weight).max()
+            scale = 0.5 / abs(subnet.conv1.weight).max()
             writer.add_video(
                 "Weights/conv1d/img",
-                scale * net.subnet.conv1.weight.permute(0, 2, 1, 3, 4) + 0.5,
+                scale * subnet.conv1.weight.permute(0, 2, 1, 3, 4) + 0.5,
                 n,
             )
 
@@ -217,15 +215,15 @@ def main(args):
     subnet.to(device=device)
     if args.decoder == "average":
         net = decoder.Average(
-            subnet, trainset.noutputs, trainset.nclasses, nfeats, threed=threed
+            trainset.noutputs, trainset.nclasses, nfeats, threed=threed
         ).to(device)
     elif args.decoder == "center":
         net = decoder.Center(
-            subnet, trainset.noutputs, trainset.nclasses, nfeats, threed=threed
+            trainset.noutputs, trainset.nclasses, nfeats, threed=threed
         ).to(device)
     elif args.decoder == "point":
         net = decoder.Point(
-            subnet, trainset.noutputs, trainset.nclasses, nfeats, threed=threed
+            trainset.noutputs, trainset.nclasses, nfeats, threed=threed
         ).to(device)
     else:
         raise NotImplementedError(f"{args.decoder} not implemented")
@@ -249,9 +247,9 @@ def main(args):
 
         return hook_fn
 
-    if hasattr(net.subnet, "layers"):
+    if hasattr(subnet, "layers"):
         # Hook the activations
-        for name, layer in net.subnet.layers:
+        for name, layer in subnet.layers:
             layer.register_forward_hook(hook(name))
 
     net.requires_grad_(True)
@@ -279,6 +277,7 @@ def main(args):
 
                 # zero the parameter gradients
                 X = train_transform(X)
+                X = subnet(X)
                 outputs = net(X)
 
                 loss = loss_fun(outputs, labels)
@@ -302,7 +301,7 @@ def main(args):
                 writer.add_scalar("Loss/train", loss.item(), n)
 
                 if ll % args.print_frequency == args.print_frequency - 1:
-                    log_net(net, layers, writer, n)
+                    log_net(net, subnet, layers, writer, n)
                     print(
                         "[%02d, %07d] average train loss: %.3f"
                         % (epoch + 1, n, running_loss / args.print_frequency)
@@ -310,8 +309,8 @@ def main(args):
                     running_loss = 0
                     ll = 0
 
-                    if hasattr(net.subnet, "layers"):
-                        for name, layer in net.subnet.layers:
+                    if hasattr(subnet, "layers"):
+                        for name, layer in subnet.layers:
                             writer.add_histogram(
                                 f"Activations/{name}/hist",
                                 activations[name].view(-1),
