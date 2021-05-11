@@ -380,6 +380,18 @@ def get_dataset(args, fold):
             nframedelay=0,
             single_cell=int(args.subset),
         )
+    elif args.dataset == "pvc1-repeats":
+        data = pvc1.PVC1(
+            os.path.join(args.data_root, "crcns-ringach-data"),
+            split=fold,
+            nt=nt,
+            nx=112,
+            ny=112,
+            ntau=ntau,
+            nframedelay=0,
+            repeats=True,
+            single_cell=int(args.subset),
+        )
     elif args.dataset == "pvc4":
         data = pvc4.PVC4(
             os.path.join(args.data_root, "crcns-pvc4"),
@@ -455,6 +467,24 @@ def get_dataset(args, fold):
             ntau=ntau,
             single_cell=int(args.subset),
             norm_scheme="cpc",
+        )
+    elif args.dataset == "dorsal_norm_neutralbg":
+        data = mst.MST(
+            os.path.join(args.data_root, "packlab-dorsal"),
+            split=fold,
+            nt=nt,
+            ntau=ntau,
+            single_cell=int(args.subset),
+            norm_scheme="neutralbg",
+        )
+    elif args.dataset == "mt1_norm_neutralbg":
+        data = mst.MST(
+            os.path.join(args.data_root, "crcns-mt1/movies"),
+            split=fold,
+            nt=nt,
+            ntau=ntau,
+            single_cell=int(args.subset),
+            norm_scheme="neutralbg",
         )
     else:
         raise NotImplementedError(f"{args.dataset} implemented")
@@ -721,28 +751,50 @@ def get_feature_model(args):
 
         model = DorsalNet(symmetric=symmetrics[ckpt_id])
         model.load_state_dict(subnet_dict)
+
         layers = collections.OrderedDict(
             [(f"layer{i:02}", l[-1]) for i, l in enumerate(model.layers)]
         )
 
         metadata = {"sz": 112, "threed": True}
-    elif args.features == "cpc":
+    elif args.features.startswith("cpc"):
         sys.path.append("../CPC/dpc")
         sys.path.append("../CPC/backbone")
         from model_3d import DPC_RNN
 
+        checkpoints = [
+            "cpc-model_best_epoch99.pth.tar",  # Checkpoint of first run, did not learn direction selectivity.
+            "cpc-epoch120.pth.tar",  # Checkpoint of second run, centered, learns direction selectivity.
+            "cpc_ufc_best_epoch99.pth.tar",  # ufc-based model
+        ]
+        network_names = [
+            "monkeynet",
+            "monkeynet",
+            "visualnet",
+        ]
+        ckpt_id = int(args.features[-2:])
+        ckpt_path = checkpoints[ckpt_id]
+
         model = DPC_RNN(
-            sample_size=64, num_seq=8, seq_len=5, network="monkeynet", pred_step=3
+            sample_size=64,
+            num_seq=8,
+            seq_len=5,
+            network=network_names[ckpt_id],
+            pred_step=3,
         )
-        checkpoint = torch.load(
-            os.path.join(args.ckpt_root, "cpc-model_best_epoch99.pth.tar")
-        )
+        checkpoint = torch.load(os.path.join(args.ckpt_root, ckpt_path))
         subnet_dict = extract_subnet_dict(checkpoint["state_dict"])
+
+        valid_idx = [0, 1, 2, 4, 6, 8, 10, 12]
 
         model.load_state_dict(subnet_dict)
         model = model.backbone
         layers = collections.OrderedDict(
-            [(f"layer{i:02}", l[-1]) for i, l in enumerate(model.layers)]
+            [
+                (f"layer{i:02}", l[-1])
+                for i, l in enumerate(model.layers)
+                if i in valid_idx
+            ]
         )
         metadata = {"sz": 112, "threed": True}
     else:
