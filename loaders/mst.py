@@ -53,8 +53,11 @@ class MST(torch.utils.data.Dataset):
         norm_scheme="neutralbg",
     ):
 
-        if nt != 1 or ntau != 10:
-            raise NotImplementedError("nt = 1 and ntau = 10 implemented only")
+        if nt != 1:
+            raise NotImplementedError("nt = 1 implemented only")
+
+        if ntau < 10:
+            raise NotImplementedError("ntau >= 10 implemented only")
 
         block_len = 6  # in seconds
         framerate = 30
@@ -113,21 +116,36 @@ class MST(torch.utils.data.Dataset):
 
                 end_time = min((rg[-1] + 2, start_time + nskip + 1))
 
-                spk = np.array(all_spks[start_time : end_time - 1])
+                if all_spks.ndim > 1:
+                    spk = np.array(all_spks[start_time : end_time - 1, :])
+                else:
+                    spk = np.array(all_spks[start_time : end_time - 1]).reshape((-1, 1))
+
                 if np.any(np.isnan(spk)) or np.any(spk < 0):
                     # Skip this chunk
                     # print("nan")
                     continue
 
                 if int(n / block_size) % nblocks in splits[split]:
+                    padded_idx = Xidx[start_time : end_time - 1, :].astype(np.int)
+
+                    if self.ntau > padded_idx.shape[1]:
+                        # Pad.
+                        lpad = (self.ntau - padded_idx.shape[1]) // 2
+                        idxrg = np.zeros(self.ntau)
+                        idxrg[lpad:-lpad] = np.arange(padded_idx.shape[1])
+                        idxrg[:lpad] = 0
+                        idxrg[-lpad:] = padded_idx.shape[1] - 1
+
+                        padded_idx = padded_idx[:, idxrg.astype(np.int)]
+
                     sequence.append(
                         {
-                            "stim_idx": Xidx[start_time : end_time - 1, :].astype(
-                                np.int
-                            ),
+                            "stim_idx": padded_idx,
                             "spikes": spk,
                             "split": split,
                             "cellnum": n_electrodes,
+                            "cellnum_end": n_electrodes + spk.shape[1],
                             "path": cell,
                         }
                     )
@@ -135,9 +153,13 @@ class MST(torch.utils.data.Dataset):
                 n += 1
 
             assert n > 0
-            n_electrodes += 1
-            # print(f.get_node("/corr_multiplier").read())
-            self.max_r = 1 / f.get_node("/corr_multiplier").read()
+            n_electrodes += spk.shape[1]
+
+            try:
+                self.max_r = 1 / f.get_node("/corr_multiplier").read()
+            except tables.exceptions.NoSuchNodeError:
+                self.max_r = 1
+
             f.close()
 
         self.sequence = sequence
@@ -166,7 +188,11 @@ class MST(torch.utils.data.Dataset):
             f = tables.open_file(tgt["path"], "r")
 
             if tgt["split"] == "report":
-                stim = np.array(f.get_node("/X_report")[:])
+                try:
+                    stim = np.array(f.get_node("/X_report")[:])
+                except tables.NoSuchNodeError:
+                    stim = np.array(f.get_node("/X_traintune")[:])
+
                 cache["report"][tgt["path"]] = stim
             else:
                 stim = np.array(f.get_node("/X_traintune")[:])
@@ -183,16 +209,21 @@ class MST(torch.utils.data.Dataset):
 
         # Create a mask from the electrode range
         M = np.zeros((self.total_electrodes), dtype=np.bool)
-        M[tgt["cellnum"] + self.offset] = True
+        M[(tgt["cellnum"] + self.offset) : (tgt["cellnum_end"] + self.offset)] = True
 
         Y = np.zeros((self.total_electrodes, self.nt))
-        Y[tgt["cellnum"] + self.offset, :] = tgt["spikes"]
+        Y[(tgt["cellnum"] + self.offset) : (tgt["cellnum_end"] + self.offset), :] = tgt[
+            "spikes"
+        ].T
 
         W = np.zeros((self.total_electrodes))
-        W[tgt["cellnum"] + self.offset] = 1.0  # max(w, .1)
+        W[
+            (tgt["cellnum"] + self.offset) : (tgt["cellnum_end"] + self.offset)
+        ] = 1.0  # max(w, .1)
 
         # channel, time, ny, nx
-        X = stim[tgt["stim_idx"], ...]
+        # Add a bounds checks here.
+        X = stim[np.fmin(tgt["stim_idx"], stim.shape[0] - 1), ...]
         X = np.concatenate([X, X, X], axis=0)
 
         if self.norm_scheme == "neutralbg":
