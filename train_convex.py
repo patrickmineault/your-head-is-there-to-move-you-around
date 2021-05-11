@@ -82,7 +82,6 @@ def compute_layer(
 
     # Use k-fold cross-validation
     kfold = 5
-    lambdas = np.logspace(0, 5, num=11)
     splits = (np.arange(X.shape[0]) / 100).astype(np.int) % kfold
 
     m = X.mean(axis=0, keepdims=True)
