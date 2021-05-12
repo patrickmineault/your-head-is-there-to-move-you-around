@@ -20,9 +20,9 @@ if [ "$2" == "local" ]; then
     slowfast_root=../slowfast
     ckpt_root=./pretrained
 elif [ "$2" == "remote" ]; then
-    data_root=/storage/migrated_from_gradient_v1_storage/data_derived
+    data_root=/storage/data_derived
     slowfast_root=/workspace/slowfast
-    ckpt_root=/storage/migrated_from_gradient_v1_storage/checkpoints
+    ckpt_root=/storage/checkpoints
 else
     echo "Unknown target!"
     exit 1
