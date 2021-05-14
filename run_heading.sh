@@ -8,7 +8,7 @@ elif [ "$1" == "baselines" ]; then
 elif [ "$1" == "r3d" ]; then
     models=(r3d_18 mc3_18 r2plus1d_18)
 elif [ "$1" == "slowfast" ]; then
-    models=(SlowFast_Fast I3D)
+    models=(I3D SlowFast_Fast)
 else
     echo "Unknown type!"
     exit 1
