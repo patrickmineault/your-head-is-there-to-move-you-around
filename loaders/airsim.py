@@ -82,7 +82,7 @@ class AirSim(torch.utils.data.Dataset):
                                         labels[j]["heading_yaw"],
                                         labels[j]["rotation_pitch"],
                                         labels[j]["rotation_yaw"],
-                                        labels[j]["speed"],
+                                        labels[j]["speed"] / max_speed,
                                     ],
                                     dtype=np.float32,
                                 ),

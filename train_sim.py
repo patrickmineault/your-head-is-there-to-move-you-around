@@ -136,7 +136,7 @@ def get_subnet(args, start_size):
     elif args.submodel.startswith("dorsalnet"):
 
         symmetric = "untied" not in args.submodel
-        subnet = monkeynet.DorsalNet(symmetric=symmetric)
+        subnet = monkeynet.DorsalNet(symmetric, args.nfeats)
 
         # Lock in the shallow net features.
         # path = Path(args.ckpt_root) / 'model.ckpt-8700000-2021-01-03 22-34-02.540594.pt'
@@ -147,7 +147,23 @@ def get_subnet(args, start_size):
 
         threed = True
         sz = ((start_size + 1) // 2 + 1) // 2
-        nfeats = 32
+        nfeats = args.nfeats
+
+    elif args.submodel.startswith("shallowdorsalnet"):
+
+        symmetric = "untied" not in args.submodel
+        subnet = monkeynet.ShallowDorsalNet(symmetric, args.nfeats)
+
+        # Lock in the shallow net features.
+        # path = Path(args.ckpt_root) / 'model.ckpt-8700000-2021-01-03 22-34-02.540594.pt'
+        # subnet.s1.requires_grad_(False)
+        # checkpoint = torch.load(str(path))
+        # subnet_dict = extract_subnet_dict(checkpoint)
+        # subnet.s1.load_state_dict(subnet_dict)
+
+        threed = True
+        sz = ((start_size + 1) // 2 + 1) // 2
+        nfeats = args.nfeats
 
     elif args.submodel == "gaborpyramid2d":
         subnet = nn.Sequential(
@@ -236,7 +252,9 @@ def main(args):
 
     layers = get_all_layers(net)
 
-    optimizer = optim.Adam(net.parameters(), lr=args.learning_rate)
+    optimizer = optim.Adam(
+        list(net.parameters()) + list(subnet.parameters()), lr=args.learning_rate
+    )
     scheduler = None
 
     activations = {}
@@ -345,6 +363,7 @@ def main(args):
                         X, labels = X.to(device), labels.to(device)
 
                         X = eval_transform(X)
+                        X = subnet(X)
                         outputs = net(X)
 
                         loss = loss_fun(outputs, labels)
@@ -366,12 +385,12 @@ def main(args):
                 ll += 1
 
                 if n % args.ckpt_frequency == 0:
-                    save_state(net, f"model.ckpt-{n:07}", output_dir)
+                    save_state(subnet, f"model.ckpt-{n:07}", output_dir)
 
     except KeyboardInterrupt:
         pass
 
-    filename = save_state(net, f"model.ckpt-{n:07}", output_dir)
+    filename = save_state(subnet, f"model.ckpt-{n:07}", output_dir)
 
     if args.no_wandb:
         print("Skipping W&B per config")
@@ -380,8 +399,8 @@ def main(args):
             print("Saving to weight and biases")
             wandb.init(project="crcns-train_sim.py", config=vars(args))
             config = wandb.config
-            wandb.watch(net, log="all")
-            torch.save(net.state_dict(), os.path.join(wandb.run.dir, "model.pt"))
+            wandb.watch(subnet, log="all")
+            torch.save(subnet.state_dict(), os.path.join(wandb.run.dir, "model.pt"))
             print("done")
         else:
             print("Aborted too early, did not save results")

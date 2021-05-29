@@ -13,7 +13,7 @@ from loaders import pvc4, pvc1, vim2, mt2, stc1, st, mst
 from modelzoo import gabor_pyramid, separable_net
 from modelzoo.motionnet import MotionNet
 from modelzoo.shiftnet import ShiftNet
-from modelzoo.monkeynet import ShallowNet, V1Net, DorsalNet
+from modelzoo.monkeynet import ShallowNet, V1Net, DorsalNet, ShallowDorsalNet
 
 import torch
 from torch import nn
@@ -740,8 +740,40 @@ def get_feature_model(args):
             "dorsalnet02.ckpt-0744960-2021-01-26 19-59-03.094205.pt",  # Late checkpoint of second airsim run
             "airsim_dorsalnet_batch2_model.ckpt-0640000-2021-02-11 21-00-20.761211.pt",  # Early checkpoint of batch2 of airsim generated data
             "airsim_dorsalnet_batch2_model.ckpt-3174400-2021-02-12 02-03-29.666899.pt",  # Late checkpoint of batch2 of airsim generated data
+            "airsim_dorsalnet_batch2_model_refit.ckpt-3174400-2021-05-13 18-33-37.791669.pt",  # Refit of late checkpoint of batch2 of airsim generated data
+            "airsim_dorsalnet_batch2_model_128.ckpt-1686264-2021-05-14 11-04-10.635736.pt",  # Refit with lots of features
+            "airsim_dorsalnet_batch2_model_center.pt",  # center decoder
+            "airsim_shallow.pt",  # Shallow variants
+            "airsim_shallow_wide.pt",  # Shallow and wide variant
+            "airsim_dorsalnet_batch2_continuous.pt",  # Continuous output
         ]
-        symmetrics = [True, True, False, False, False]
+        dims = [32, 32, 32, 32, 32, 32, 128, 32, 32, 128, 32]
+        symmetrics = [
+            True,
+            True,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+        ]
+        models = [
+            DorsalNet,
+            DorsalNet,
+            DorsalNet,
+            DorsalNet,
+            DorsalNet,
+            DorsalNet,
+            DorsalNet,
+            DorsalNet,
+            ShallowDorsalNet,
+            ShallowDorsalNet,
+            ShallowDorsalNet,
+        ]
         ckpt_id = int(args.features[-2:])
         ckpt_path = checkpoints[ckpt_id]
         path = os.path.join(args.ckpt_root, ckpt_path)
@@ -749,7 +781,7 @@ def get_feature_model(args):
 
         subnet_dict = extract_subnet_dict(checkpoint)
 
-        model = DorsalNet(symmetric=symmetrics[ckpt_id])
+        model = models[ckpt_id](symmetrics[ckpt_id], dims[ckpt_id])
         model.load_state_dict(subnet_dict)
 
         layers = collections.OrderedDict(
@@ -813,7 +845,11 @@ def get_feature_model(args):
 def extract_subnet_dict(d):
     out = {}
     for k, v in d.items():
+        if k.startswith("fully_connected"):
+            continue
         if k.startswith("subnet.") or k.startswith("module."):
             out[k[7:]] = v
+        else:
+            out[k] = v
 
     return out

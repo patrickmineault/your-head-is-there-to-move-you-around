@@ -1,0 +1,104 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.10.20
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.8.8
+    t:
+      1:
+      - 1
+      - 5
+      2:
+      - 1
+      - 5
+      3:
+      - 1
+      4: 3.8.8
+      5: 0.10.20
+      8:
+      - 5
+batch_size:
+  desc: null
+  value: 16
+ckpt_frequency:
+  desc: null
+  value: 2500
+ckpt_root:
+  desc: null
+  value: ./pretrained
+data_root:
+  desc: null
+  value: /mnt/e/data_derived
+dataset:
+  desc: null
+  value: airsim_batch2
+decoder:
+  desc: null
+  value: center
+exp_name:
+  desc: null
+  value: cloudfit
+features:
+  desc: null
+  value: cpc_01
+image_size:
+  desc: null
+  value: 112
+learning_rate:
+  desc: null
+  value: 0.003
+load_ckpt:
+  desc: null
+  value: ''
+load_conv1_weights:
+  desc: null
+  value: ''
+nfeats:
+  desc: null
+  value: 64
+no_sample:
+  desc: null
+  value: false
+no_wandb:
+  desc: null
+  value: false
+ntau:
+  desc: null
+  value: 10
+num_blocks:
+  desc: null
+  value: 0
+num_epochs:
+  desc: null
+  value: 50
+output_dir:
+  desc: null
+  value: ./models
+print_frequency:
+  desc: null
+  value: 100
+skip_existing:
+  desc: null
+  value: false
+slowfast_root:
+  desc: null
+  value: ../slowfast
+softmax:
+  desc: null
+  value: true
+subsample_layers:
+  desc: null
+  value: false
+subset:
+  desc: null
+  value: '-1'
+virtual:
+  desc: null
+  value: ''
+warmup:
+  desc: null
+  value: 5000
