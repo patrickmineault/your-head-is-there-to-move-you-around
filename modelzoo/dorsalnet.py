@@ -4,7 +4,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from resblocks import ResBlock, BottleneckTransform
+from .resblocks import ResBlock, BottleneckTransform
 
 
 class SymmetricConv3d(nn.Module):
