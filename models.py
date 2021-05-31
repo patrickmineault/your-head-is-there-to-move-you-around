@@ -13,7 +13,7 @@ from loaders import pvc4, pvc1, mt2, mst
 from modelzoo import gabor_pyramid, separable_net
 from modelzoo.motionnet import MotionNet
 from modelzoo.shiftnet import ShiftNet
-from modelzoo.monkeynet import DorsalNet
+from modelzoo.dorsalnet import DorsalNet
 
 import torch
 from torch import nn
@@ -673,8 +673,8 @@ def get_feature_model(args):
             "cpc_ufc_best_epoch99.pth.tar",  # ufc-based model
         ]
         network_names = [
-            "monkeynet",
-            "monkeynet",
+            "dorsalnet",
+            "dorsalnet",
             "visualnet",
         ]
         ckpt_id = int(args.features[-2:])

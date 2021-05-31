@@ -1,5 +1,5 @@
 from paths import DERIVED_DATA
-from modelzoo import xception, separable_net, gabor_pyramid, monkeynet, decoder
+from modelzoo import xception, separable_net, gabor_pyramid, dorsalnet, decoder
 from loaders import airsim
 from models import extract_subnet_dict
 
@@ -126,12 +126,12 @@ def get_subnet(args, start_size):
     elif args.submodel.startswith("shallownet"):
 
         symmetric = "symmetric" in args.submodel
-        subnet = monkeynet.ShallowNet(nstartfeats=args.nfeats, symmetric=symmetric)
+        subnet = dorsalnet.ShallowNet(nstartfeats=args.nfeats, symmetric=symmetric)
         threed = True
         sz = ((start_size + 1) // 2 + 1) // 2
         nfeats = args.nfeats
     elif args.submodel.startswith("v1net"):
-        subnet = monkeynet.V1Net()
+        subnet = dorsalnet.V1Net()
         threed = True
         sz = ((start_size + 1) // 2 + 1) // 2
         nfeats = args.nfeats
@@ -139,7 +139,7 @@ def get_subnet(args, start_size):
     elif args.submodel.startswith("dorsalnet"):
 
         symmetric = "untied" not in args.submodel
-        subnet = monkeynet.DorsalNet(symmetric, args.nfeats)
+        subnet = dorsalnet.DorsalNet(symmetric, args.nfeats)
 
         # Lock in the shallow net features.
         # path = Path(args.ckpt_root) / 'model.ckpt-8700000-2021-01-03 22-34-02.540594.pt'
@@ -155,7 +155,7 @@ def get_subnet(args, start_size):
     elif args.submodel.startswith("shallowdorsalnet"):
 
         symmetric = "untied" not in args.submodel
-        subnet = monkeynet.ShallowDorsalNet(symmetric, args.nfeats)
+        subnet = dorsalnet.ShallowDorsalNet(symmetric, args.nfeats)
 
         # Lock in the shallow net features.
         # path = Path(args.ckpt_root) / 'model.ckpt-8700000-2021-01-03 22-34-02.540594.pt'

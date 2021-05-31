@@ -1,0 +1,1 @@
+The file `resblocks.py` contains a portion of code originally from SlowFast, https://github.com/facebookresearch/SlowFast, under an Apache 2.0 license.

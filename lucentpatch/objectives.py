@@ -1,5 +1,22 @@
+# Copyright 2020 The Lucent Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+
 from lucent.optvis import objectives
 import torch
+
 
 @objectives.wrap_objective()
 def neuron(layer, n_channel, offset=(0, 0), batch=None):
@@ -17,39 +34,48 @@ def neuron(layer, n_channel, offset=(0, 0), batch=None):
                                       |   |   |   |   |
                                       +---+---+---+---+
     """
+
     @objectives.handle_batch(batch)
     def inner(model):
         layer_t = model(layer)
         x, y = layer_t.shape[-1] // 2, layer_t.shape[-2] // 2
-        return -layer_t[:, n_channel, :, y+offset[1], x+offset[0]].mean()
+        return -layer_t[:, n_channel, :, y + offset[1], x + offset[0]].mean()
+
     return inner
 
 
 @objectives.wrap_objective()
 def slow(layer, decay_ratio=2):
-    """Encourage neighboring images to be change slowly with L2 penalty
-    """
+    """Encourage neighboring images to be change slowly with L2 penalty"""
+
     def inner(model):
         layer_t = model(layer)
-        return (torch.mean(torch.sum((layer_t[:-1, ...] - layer_t[1:, ...]) ** 2, axis=0) + 
-                (layer_t[0, ...] - layer_t[-1, ...]) ** 2))
+        return torch.mean(
+            torch.sum((layer_t[:-1, ...] - layer_t[1:, ...]) ** 2, axis=0)
+            + (layer_t[0, ...] - layer_t[-1, ...]) ** 2
+        )
+
     return inner
+
 
 @objectives.wrap_objective()
 def tv_slow(layer, decay_ratio=2):
-    """Encourage neighboring images to be change slowly with L1 penalty
-    """
+    """Encourage neighboring images to be change slowly with L1 penalty"""
+
     def inner(model):
         layer_t = model(layer)
-        return (torch.mean(torch.sum(abs(layer_t[:-1, ...] - layer_t[1:, ...]), axis=0) + 
-                abs(layer_t[0, ...] - layer_t[-1, ...])))
+        return torch.mean(
+            torch.sum(abs(layer_t[:-1, ...] - layer_t[1:, ...]), axis=0)
+            + abs(layer_t[0, ...] - layer_t[-1, ...])
+        )
+
     return inner
 
 
 @objectives.wrap_objective()
 def intensity_preservation(layer, block_size, input_size):
-    """Encourage neighboring images to change slowly by lying on the optic flow
-    """
+    """Encourage neighboring images to change slowly by lying on the optic flow"""
+
     def inner(model):
         penalty = 0
 
@@ -57,16 +83,21 @@ def intensity_preservation(layer, block_size, input_size):
         for i in range(1, layer_t.shape[0] - 1):
             for k in range(0, input_size - block_size + 1, block_size):
                 for j in range(0, input_size - block_size + 1, block_size):
-                    rgx = slice(j+1, j+block_size-1)
-                    rgy = slice(k+1, k+block_size-1)
-                    dx = layer_t[i, :, rgy, (j+2):(j+block_size)] - layer_t[i, :, rgy, (j):(j+block_size-2)]
-                    dy = layer_t[i, :, (k+2):(k+block_size), rgx] - layer_t[i, :, (k):(k+block_size-2), rgx]
-                    ip = (i + 1) %  layer_t.shape[0]
-                    im = (i - 1) %  layer_t.shape[0]
+                    rgx = slice(j + 1, j + block_size - 1)
+                    rgy = slice(k + 1, k + block_size - 1)
+                    dx = (
+                        layer_t[i, :, rgy, (j + 2) : (j + block_size)]
+                        - layer_t[i, :, rgy, (j) : (j + block_size - 2)]
+                    )
+                    dy = (
+                        layer_t[i, :, (k + 2) : (k + block_size), rgx]
+                        - layer_t[i, :, (k) : (k + block_size - 2), rgx]
+                    )
+                    ip = (i + 1) % layer_t.shape[0]
+                    im = (i - 1) % layer_t.shape[0]
                     dt = layer_t[ip, :, rgy, rgx] - layer_t[im, :, rgy, rgx]
 
-                    A = torch.stack([dx.reshape(-1), 
-                                   dy.reshape(-1)], axis=1)
+                    A = torch.stack([dx.reshape(-1), dy.reshape(-1)], axis=1)
                     b = -dt.reshape(-1, 1)
 
                     M = torch.inverse(torch.matmul(A.T, A))
@@ -76,4 +107,5 @@ def intensity_preservation(layer, block_size, input_size):
                     penalty += delta_brightness
 
         return penalty
+
     return inner

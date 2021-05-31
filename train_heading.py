@@ -1,4 +1,4 @@
-from modelzoo import xception, separable_net, gabor_pyramid, monkeynet, decoder
+from modelzoo import xception, separable_net, gabor_pyramid, dorsalnet, decoder
 from loaders import airsim
 from models import extract_subnet_dict
 

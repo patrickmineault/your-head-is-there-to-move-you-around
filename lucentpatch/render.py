@@ -1,3 +1,19 @@
+# Copyright 2020 The Lucent Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+
 from collections import OrderedDict
 from tqdm import tqdm
 import torch
@@ -6,6 +22,8 @@ from lucent.optvis import transform, objectives
 """Hot-patched from
 https://github.com/greentfrapp/lucent/blob/master/lucent/optvis/render.py
 """
+
+
 def render_vis(
     model,
     objective_f,
@@ -60,10 +78,10 @@ def render_vis(
         for i in tqdm(range(1, max(thresholds) + 1), disable=(not progress)):
             optimizer.zero_grad()
             im_f = image_f()
-            image_t = transform_f(im_f) # 5 x 3
-            image_t = torch.transpose(image_t, 0, 1).unsqueeze(0) # 1 x 3 x 5
+            image_t = transform_f(im_f)  # 5 x 3
+            image_t = torch.transpose(image_t, 0, 1).unsqueeze(0)  # 1 x 3 x 5
             model(image_t)
-            
+
             loss = objective_f(hook)
             loss.backward()
             optimizer.step()
@@ -108,6 +126,7 @@ class ModuleHook:
     def close(self):
         self.hook.remove()
 
+
 def hook_model(model, image_f):
     features = OrderedDict()
 
@@ -129,9 +148,13 @@ def hook_model(model, image_f):
         elif layer == "labels":
             out = list(features.values())[-1].features
         else:
-            assert layer in features, f"Invalid layer {layer}. Retrieve the list of layers with `lucent.modelzoo.util.get_model_layers(model)`."
+            assert (
+                layer in features
+            ), f"Invalid layer {layer}. Retrieve the list of layers with `lucent.modelzoo.util.get_model_layers(model)`."
             out = features[layer].features
-        assert out is not None, "There are no saved feature maps. Make sure to put the model in eval mode, like so: `model.to(device).eval()`. See README for example."
+        assert (
+            out is not None
+        ), "There are no saved feature maps. Make sure to put the model in eval mode, like so: `model.to(device).eval()`. See README for example."
         return out
 
     return hook

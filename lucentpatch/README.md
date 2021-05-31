@@ -1,0 +1,1 @@
+The code in this folder was originally distributed as [part of Lucent](https://github.com/greentfrapp/lucent) under an Apache 2.0 license. It has been modified to accomodate time as a variable.
