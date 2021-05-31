@@ -17,6 +17,7 @@ do
     max_cell=${max_cells[$dataset_num]}
     for model in "${models[@]}";
     do
+        echo "$dataset" "$model"
         for ((subset = 0; subset <= $max_cell; subset++))
         do
             python train_convex.py \
@@ -37,7 +38,7 @@ do
                 --no_save \
                 --save_predictions \
                 --method ridge \
-                --pca 500 \
+                --pca 500
             # Clear cache.
             rm -f $cache_root/*
         done

@@ -3,7 +3,7 @@
 # Adapted from https://github.com/facebookresearch/SlowFast/blob/d4a4acde2bd344316789bbd6fa778e37852f522f/slowfast/models/resnet_helper.py
 # Original released under an Apache license.
 from torch import nn
-
+import torch
 
 class ResBlock(nn.Module):
     """

@@ -673,8 +673,8 @@ def get_feature_model(args):
             "cpc_ufc_best_epoch99.pth.tar",  # ufc-based model
         ]
         network_names = [
-            "dorsalnet",
-            "dorsalnet",
+            "monkeynet",
+            "monkeynet",
             "visualnet",
         ]
         ckpt_id = int(args.features[-2:])
