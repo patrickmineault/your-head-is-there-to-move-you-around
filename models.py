@@ -9,11 +9,11 @@ import sys
 import tables
 from tqdm import tqdm
 
-from loaders import pvc4, pvc1, vim2, mt2, stc1, st, mst
+from loaders import pvc4, pvc1, mt2, mst
 from modelzoo import gabor_pyramid, separable_net
 from modelzoo.motionnet import MotionNet
 from modelzoo.shiftnet import ShiftNet
-from modelzoo.monkeynet import ShallowNet, V1Net, DorsalNet, ShallowDorsalNet
+from modelzoo.monkeynet import DorsalNet
 
 import torch
 from torch import nn
@@ -348,28 +348,7 @@ def get_dataset(args, fold):
     else:
         ntau = 10
 
-    if args.dataset == "vim2":
-        nframedelay = -3
-        data = vim2.Vim2(
-            os.path.join(args.data_root, "crcns-vim2"),
-            split=fold,
-            nt=nt,
-            ntau=80,
-            nframedelay=nframedelay,
-            subject=args.subset,
-        )
-    elif args.dataset == "vim2_deconv":
-        nframedelay = -3
-        data = vim2.Vim2(
-            os.path.join(args.data_root, "crcns-vim2"),
-            split=fold,
-            nt=nt,
-            ntau=80,
-            nframedelay=nframedelay,
-            subject=args.subset,
-            deconvolved=True,
-        )
-    elif args.dataset == "pvc1":
+    if args.dataset == "pvc1":
         data = pvc1.PVC1(
             os.path.join(args.data_root, "crcns-ringach-data"),
             split=fold,
@@ -424,22 +403,6 @@ def get_dataset(args, fold):
             ntau=ntau,
             nframedelay=1,
             single_cell=int(args.subset),
-        )
-    elif args.dataset == "stc-mst":
-        data = stc1.Stc1(
-            os.path.join(args.data_root, "crcns-stc1"), split=fold, subset="MSTd"
-        )
-    elif args.dataset == "stc-vip":
-        data = stc1.Stc1(
-            os.path.join(args.data_root, "crcns-stc1"), split=fold, subset="VIP"
-        )
-    elif args.dataset == "st-mst":
-        data = st.St(
-            os.path.join(args.data_root, "packlab-st"), split=fold, subset="MSTd"
-        )
-    elif args.dataset == "st-v3a":
-        data = st.St(
-            os.path.join(args.data_root, "packlab-st"), split=fold, subset="V3A"
         )
     elif args.dataset == "mst_norm_airsim":
         data = mst.MST(
@@ -682,106 +645,16 @@ def get_feature_model(args):
         )
 
         metadata = {"sz": 112, "threed": True}
-    elif args.features.startswith("ShallowMonkeyNet"):
-        if "pvc4" in args.features:
-            # Load peach-wildflower-102
-            # https://wandb.ai/pmin/crcns-train_net.py/runs/2l21idn1/overview?workspace=user-pmin
-            path = os.path.join(
-                args.ckpt_root,
-                "shallownet_symmetric_model.ckpt-1040000-2020-12-31 03-29-51.517721.pt",
-            )
-        elif "pvc1" in args.features:
-            # This model was never saved because of a crash
-            # From run Jan01_15-45-00_DESKTOP-I8HN3PB_pvc1_shallownet
-            path = os.path.join(
-                args.ckpt_root, "model.ckpt-8700000-2021-01-03 22-34-02.540594.pt"
-            )
-        else:
-            raise NotImplementedError("Not implemented")
-        checkpoint = torch.load(path)
-
-        subnet_dict = extract_subnet_dict(checkpoint)
-
-        model = ShallowNet(
-            nstartfeats=subnet_dict["bn1.weight"].shape[0],
-            symmetric=subnet_dict["bn1.weight"].shape[0]
-            > subnet_dict["conv1.weight"].shape[0],
+    elif args.features == "airsim_04":
+        ckpt_path = (
+            "airsim_dorsalnet_batch2_model.ckpt-3174400-2021-02-12 02-03-29.666899.pt"
         )
-        model.load_state_dict(subnet_dict)
-        layers = collections.OrderedDict(
-            [(f"layer{i:02}", l[-1]) for i, l in enumerate(model.layers)]
-        )
-
-        metadata = {"sz": 112, "threed": True}
-    elif args.features == "V1Net":
-        path = os.path.join(
-            args.ckpt_root, "model.ckpt-1259280-2021-01-10 17-09-33.770070.pt"
-        )
-        checkpoint = torch.load(path)
-
-        subnet_dict = extract_subnet_dict(checkpoint)
-
-        model = V1Net()
-        model.load_state_dict(subnet_dict)
-        layers = model.layers
-        checkpoint = torch.load(path)
-
-        subnet_dict = extract_subnet_dict(checkpoint)
-
-        model = DorsalNet()
-        model.load_state_dict(subnet_dict)
-        layers = model.layers
-
-        metadata = {"sz": 112, "threed": True}
-    elif args.features.startswith("airsim"):
-        checkpoints = [
-            "airsim.ckpt-0100000-2021-01-26 00-54-21.846656.pt",  # Early checkpoint of first airsim run
-            "airsim.ckpt-0742500-2021-01-26 08-35-31.715720.pt",  # Late checkpoint of first airsim run
-            "dorsalnet02.ckpt-0744960-2021-01-26 19-59-03.094205.pt",  # Late checkpoint of second airsim run
-            "airsim_dorsalnet_batch2_model.ckpt-0640000-2021-02-11 21-00-20.761211.pt",  # Early checkpoint of batch2 of airsim generated data
-            "airsim_dorsalnet_batch2_model.ckpt-3174400-2021-02-12 02-03-29.666899.pt",  # Late checkpoint of batch2 of airsim generated data
-            "airsim_dorsalnet_batch2_model_refit.ckpt-3174400-2021-05-13 18-33-37.791669.pt",  # Refit of late checkpoint of batch2 of airsim generated data
-            "airsim_dorsalnet_batch2_model_128.ckpt-1686264-2021-05-14 11-04-10.635736.pt",  # Refit with lots of features
-            "airsim_dorsalnet_batch2_model_center.pt",  # center decoder
-            "airsim_shallow.pt",  # Shallow variants
-            "airsim_shallow_wide.pt",  # Shallow and wide variant
-            "airsim_dorsalnet_batch2_continuous.pt",  # Continuous output
-        ]
-        dims = [32, 32, 32, 32, 32, 32, 128, 32, 32, 128, 32]
-        symmetrics = [
-            True,
-            True,
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
-        ]
-        models = [
-            DorsalNet,
-            DorsalNet,
-            DorsalNet,
-            DorsalNet,
-            DorsalNet,
-            DorsalNet,
-            DorsalNet,
-            DorsalNet,
-            ShallowDorsalNet,
-            ShallowDorsalNet,
-            ShallowDorsalNet,
-        ]
-        ckpt_id = int(args.features[-2:])
-        ckpt_path = checkpoints[ckpt_id]
         path = os.path.join(args.ckpt_root, ckpt_path)
         checkpoint = torch.load(path)
 
         subnet_dict = extract_subnet_dict(checkpoint)
 
-        model = models[ckpt_id](symmetrics[ckpt_id], dims[ckpt_id])
+        model = DorsalNet(False, 32)
         model.load_state_dict(subnet_dict)
 
         layers = collections.OrderedDict(
@@ -795,7 +668,7 @@ def get_feature_model(args):
         from model_3d import DPC_RNN
 
         checkpoints = [
-            "cpc-model_best_epoch99.pth.tar",  # Checkpoint of first run, did not learn direction selectivity.
+            None,  # historical
             "cpc-epoch120.pth.tar",  # Checkpoint of second run, centered, learns direction selectivity.
             "cpc_ufc_best_epoch99.pth.tar",  # ufc-based model
         ]

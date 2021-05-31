@@ -16,6 +16,9 @@ sys.path.append("../")
 from derive_dataset import get_max_r2
 
 
+PATH = "/mnt/e/data_derived/crcns-mt1"
+
+
 def generate_hyperflow_sequence_fast(f):
     # Nominal framerate
     fps = 30
@@ -182,7 +185,7 @@ def generate_unmatched_sequence(f, stem):
 
 
 def generate_unmatched_sequences():
-    files = Path("/mnt/e/data_derived/crcns-mt1/designmats/").glob("*.mat")
+    files = Path(PATH + "/designmats/").glob("*.mat")
     files = sorted(files)
 
     i = 0
@@ -196,7 +199,4 @@ def generate_unmatched_sequences():
 
 
 if __name__ == "__main__":
-    # generate_matched_sequences()
-    # get_all_maxr2()
-    # generate_long_sequence()
     generate_unmatched_sequences()

@@ -1,6 +1,6 @@
 from modelzoo import xception, separable_net, gabor_pyramid, monkeynet, decoder
 from loaders import airsim
-from fmri_models import extract_subnet_dict
+from models import extract_subnet_dict
 
 import argparse
 import datetime
@@ -21,7 +21,7 @@ from torchvision import transforms
 import torchvision.models as models
 import torch.nn.functional as F
 
-import fmri_models
+import models
 
 from transforms import ThreedGaussianBlur, ThreedExposure
 
@@ -107,7 +107,7 @@ def log_net(net, subnet, layers, writer, n):
 
 
 def get_subnet(args, start_size):
-    model, activations, metadata = fmri_models.get_feature_model(args)
+    model, activations, metadata = models.get_feature_model(args)
     return model, activations, metadata
 
 
@@ -225,7 +225,7 @@ def main(args):
                 # get the inputs; data is a list of [inputs, labels]
                 X, labels = data
                 X, labels = X.to(device), labels.to(device)
-                X = fmri_models.resize(X, metadata["sz"])
+                X = models.resize(X, metadata["sz"])
 
                 # zero the parameter gradients
                 with torch.no_grad():
@@ -288,7 +288,7 @@ def main(args):
                         X, labels = X.to(device), labels.to(device)
 
                         X = eval_transform(X)
-                        X = fmri_models.resize(X, metadata["sz"])
+                        X = models.resize(X, metadata["sz"])
                         X = subnet(X)
 
                         for k in optimizers.keys():

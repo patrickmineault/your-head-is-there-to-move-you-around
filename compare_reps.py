@@ -12,7 +12,7 @@ from training import (
     bootstrap_rdm_distance,
     bootstrap_ycols,
 )
-from fmri_models import (
+from models import (
     get_dataset,
     get_feature_model,
     get_aggregator,

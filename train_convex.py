@@ -7,7 +7,7 @@ import time
 import wandb
 
 from training import compute_corr
-from fmri_models import (
+from models import (
     get_dataset,
     get_feature_model,
     get_aggregator,

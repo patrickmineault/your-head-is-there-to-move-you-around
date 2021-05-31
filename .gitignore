@@ -133,7 +133,7 @@ dmypy.json
 wandb
 
 # Local folders
-models/
+checkpoints/
 runs/
 data/
 data_derived/

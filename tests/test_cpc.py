@@ -3,7 +3,7 @@ import sys
 
 sys.path.append("../")
 
-from fmri_models import get_feature_model
+from models import get_feature_model
 from python_dict_wrapper import wrap
 
 

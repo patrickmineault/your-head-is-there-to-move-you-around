@@ -1,6 +1,7 @@
+from paths import DERIVED_DATA
 from modelzoo import xception, separable_net, gabor_pyramid, monkeynet, decoder
 from loaders import airsim
-from fmri_models import extract_subnet_dict
+from models import extract_subnet_dict
 
 import argparse
 import datetime
@@ -24,6 +25,8 @@ import torch.nn.functional as F
 from transforms import ThreedGaussianBlur, ThreedExposure
 
 import wandb
+
+from paths import *
 
 
 def get_all_layers(net, prefix=[]):
@@ -479,8 +482,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset", default="airsim", help="Dataset (currently airsim only)"
     )
-    parser.add_argument("--data_root", default="./data_derived", help="Data path")
-    parser.add_argument("--ckpt_root", default="./checkpoints", help="Data path")
+    parser.add_argument("--data_root", default=DERIVED_DATA, help="Data path")
+    parser.add_argument("--ckpt_root", default=CHECKPOINTS, help="Data path")
     parser.add_argument(
         "--output_dir", default="./models", help="Output path for models"
     )

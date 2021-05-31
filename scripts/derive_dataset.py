@@ -13,6 +13,11 @@ import scipy.signal
 import shutil
 import tables
 
+import sys
+
+sys.path.append("../")
+from paths import *
+
 
 def copytree(src, dst, symlinks=False, ignore=None):
     for item in os.listdir(src):
@@ -24,142 +29,11 @@ def copytree(src, dst, symlinks=False, ignore=None):
             shutil.copy2(s, d)
 
 
-def get_max_r2(all_responses):
-    """
-    cell, repeat, t
-    """
-    assert all_responses.shape[0] == 1
-    assert all_responses.shape[2] > all_responses.shape[1]
-    all_responses = all_responses.squeeze()
-    all_responses = all_responses - all_responses.mean(1, keepdims=True)
-
-    signal_power = (
-        1
-        / (all_responses.shape[0] - 1)
-        * (
-            all_responses.shape[0] * (all_responses.mean(0) ** 2).mean()
-            - (all_responses ** 2).mean(1).mean()
-        )
-    )
-    response_power = (all_responses.mean(0) ** 2).mean()
-    return signal_power / response_power
-
-
-def derive_v2(args):
-    """Assumes all the unzipped files from crcns are in crcns-v2."""
-    full_path = os.path.join(args.data_root, "crcns-v2")
-    out_path = os.path.join(args.output_dir, "crcns-v2")
-
-    try:
-        os.makedirs(os.path.join(out_path, "NatRev"))
-    except FileExistsError:
-        pass
-
-    for i in range(7, 20):
-        os.system(f'cp -r "{full_path}/V2Data{i}/NatRev" "{out_path}"')
-
-    # Remove 4 problematic cases with too many nans
-    os.system(f'rm -rf "{out_path}/e0052"')
-    os.system(f'rm -rf "{out_path}/r0229B"')
-    os.system(f'rm -rf "{out_path}/r0230C"')
-    os.system(f'rm -rf "{out_path}/z0109"')
-
-
-def derive_vim2(args):
-
-    k = np.array(
-        [
-            0.08587235,
-            -0.12966623,
-            -0.29163768,
-            0.34957006,
-            1.0,
-            -0.29865622,
-            -0.49128265,
-        ]
-    )
-
-    for subject in [1, 2, 3]:
-        print(f"Subject {subject}")
-        f = tables.open_file(
-            f"{args.data_root}/crcns-vim2/VoxelResponses_subject{subject}.mat"
-        )
-        Yv = f.get_node("/rv")[:]
-        Yt = f.get_node("/rt")[:]
-        Ya = f.get_node("/rva")[:]
-        max_r2 = get_max_r2(Ya)
-
-        nodes = f.list_nodes("/roi")
-        rois = {}
-        for node in nodes:
-            rois[node.name] = node[:]
-        f.close()
-
-        mask = (~np.isnan(Yv)).all(1) & (~np.isnan(Yt)).all(1)
-
-        h5file = tables.open_file(
-            f"{args.output_dir}/crcns-vim2/VoxelResponses_subject{subject}.mat",
-            mode="w",
-            title="Response file",
-        )
-        h5file.create_array("/", "rva", Ya, "Validation responses")
-        h5file.create_array("/", "rv", Yv, "Validation responses")
-        h5file.create_array("/", "rt", Yt, "Training responses")
-        h5file.create_array("/", "maxr2", max_r2, "Max R^2 for this dataset")
-        h5file.create_array("/", "mask", mask, "Master mask")
-
-        assert Yv.shape[0] % 16 == 0
-        for i in range(16):
-            # There's a weird interaction between convolve2d and nans, so we wipe
-            # out the nans beforehand here.
-            rg = range((Yv.shape[0] // 16) * i, (Yv.shape[0] // 16) * (i + 1))
-            Yvd = scipy.signal.convolve2d(
-                np.nan_to_num(Yv[rg, :]), k.reshape((1, -1)), "same"
-            )
-            Yvd[:, :4] = 0
-            Yvd[:, -4:] = 0
-
-            Ytd = scipy.signal.convolve2d(
-                np.nan_to_num(Yt[rg, :]), k.reshape((1, -1)), "same"
-            )
-            Ytd[:, :4] = 0
-            Ytd[:, -4:] = 0
-            if i == 0:
-                Yvd_ = h5file.create_earray(
-                    "/", f"rvd", obj=Yvd, expectedrows=Yv.shape[0]
-                )
-                Ytd_ = h5file.create_earray(
-                    "/", f"rtd", obj=Ytd, expectedrows=Yt.shape[0]
-                )
-            else:
-                Yvd_.append(Yvd)
-                Ytd_.append(Ytd)
-
-        groups = h5file.create_group("/", "roi")
-        for key, node in rois.items():
-            h5file.create_array(groups, key, node, "ROI")
-        h5file.flush()
-        h5file.close()
-
-    f = tables.open_file(f"{args.data_root}/crcns-vim2/Stimuli.mat")
-    Xv = f.get_node("/sv")[:]
-    Xt = f.get_node("/st")[:]
-    f.close()
-
-    h5file = tables.open_file(
-        f"{args.output_dir}/crcns-vim2/Stimuli.mat", mode="w", title="Stimulus file"
-    )
-    h5file.create_array("/", "sv", Xv, "Validation stimulus")
-    h5file.create_array("/", "st", Xt, "Training stimulus")
-    h5file.flush()
-    h5file.close()
-
-
 def derive_pvc1(args):
-    root = f"{args.data_root}/crcns-ringach-data"
+    root = f"{args.data_root}/crcns-pvc1"
     movie_info = {}
 
-    out_path = f"{args.output_dir}/crcns-ringach-data"
+    out_path = f"{args.output_dir}/crcns-pvc1"
     try:
         os.makedirs(out_path)
     except FileExistsError:
@@ -191,7 +65,7 @@ def derive_pvc1(args):
 
     h5file.close()
 
-    os.system(f'cp -r "{args.data_root}/crcns-ringach-data/neurodata" "{out_path}"')
+    os.system(f'cp -r "{args.data_root}/crcns-pvc1/neurodata" "{out_path}"')
 
 
 def derive_pvc4(args):
@@ -307,11 +181,7 @@ def main(args):
     except FileExistsError:
         pass
 
-    if args.dataset == "v2":
-        derive_v2(args)
-    elif args.dataset == "vim2":
-        derive_vim2(args)
-    elif args.dataset == "pvc1":
+    if args.dataset == "pvc1":
         derive_pvc1(args)
     elif args.dataset == "pvc4":
         derive_pvc4(args)
@@ -325,10 +195,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=desc)
 
     parser.add_argument("--dataset", help="Dataset")
-    parser.add_argument("--data_root", default="./data", help="Data path")
-    parser.add_argument(
-        "--output_dir", default="/mnt/e/data_derived", help="Output path"
-    )
+    parser.add_argument("--data_root", default=RAW_DATA, help="Data path")
+    parser.add_argument("--output_dir", default=DERIVED_DATA, help="Output path")
 
     args = parser.parse_args()
     main(args)

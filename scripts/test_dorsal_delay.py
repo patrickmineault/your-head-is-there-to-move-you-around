@@ -14,7 +14,7 @@ from python_dict_wrapper import wrap
 import tables
 import torch
 
-from fmri_models import get_feature_model, get_projection_matrix, downsample_3d
+from models import get_feature_model, get_projection_matrix, downsample_3d
 from convex_models import compute_ridge_estimate, compute_boosting_estimate
 
 

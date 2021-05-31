@@ -299,41 +299,6 @@ def generate_matched_sequence(f, stem):
     fout.close()
 
 
-def generate_unmatched_sequence(f, stem):
-    X_hf, Xidx_hf, Y_hf = generate_hyperflow_sequence(f)
-    Y_hf = Y_hf.T
-    assert Xidx_hf.shape[0] == Y_hf.shape[0]
-
-    t = f.get_node("/t")[:].ravel()
-
-    # Designate a certain proportion of the sequence as the train set and tune
-    # set.
-
-    block_len = 6  # in seconds
-    framerate = 30
-    nfolds = 10
-
-    reportidx = (np.floor(t / block_len) % nfolds) == 4
-
-    fout = tables.open_file(f"/mnt/e/data_derived/packlab-dorsal/{stem}.h5", "w")
-    fout.create_array("/", "X_traintune", obj=X_hf)
-    fout.create_array("/", "Xidx_traintune", obj=Xidx_hf[~reportidx, :])
-    fout.create_array("/", "Y_traintune", obj=Y_hf[~reportidx, :])
-
-    Xidx_report = Xidx_hf[reportidx, :]
-    Y_report = Y_hf[reportidx, :]
-
-    fout.create_array("/", "X_report", obj=X_hf)
-    fout.create_array("/", "Xidx_report", obj=Xidx_report)
-    fout.create_array("/", "Y_report", obj=Y_report)
-
-    fout.create_array("/", "arealabels", obj=f.get_node("/arealabels")[:])
-    fout.create_array("/", "autocorr", obj=f.get_node("/autocorr")[:])
-    fout.create_array("/", "neuronid", obj=f.get_node("/neuronid")[:])
-
-    fout.close()
-
-
 def generate_matched_sequences():
     files = Path("/mnt/e/data_derived/packlab-mst/").glob("*.mat")
     files = sorted(files)
@@ -345,65 +310,5 @@ def generate_matched_sequences():
         f.close()
 
 
-def generate_unmatched_sequences():
-    files = Path("/mnt/e/Documents/packlab-hf/exporteddesigns").glob("*.mat")
-    files = sorted(files)
-
-    for filename in tqdm(files):
-        f = tables.open_file(filename)
-        generate_unmatched_sequence(f, filename.stem)
-        f.close()
-
-
-def get_all_maxr2():
-    files = Path("/mnt/e/data_derived/packlab-mst/").glob("*.mat")
-    files = sorted(files)
-
-    maxr2s = []
-    iccs = []
-    for filename in tqdm(files):
-        f = tables.open_file(filename)
-        if f.get_node("/stmatcheshf")[:]:
-            # _ = generate_matched_sequence(f, filename.stem)
-            _, _, _, Yall_st = generate_supertune_sequence(f)
-            assert Yall_st.shape[0] > Yall_st.shape[1]
-
-            icc = []
-            for i in range(Yall_st.shape[1]):
-                sel = np.ones(Yall_st.shape[1]) == 1
-                sel[i] = False
-                icc.append(
-                    np.corrcoef(Yall_st[:, sel].mean(axis=1), Yall_st[:, i])[0, 1],
-                )
-
-            iccs.append(np.mean(icc))
-
-            themaxr2 = get_max_r2(
-                Yall_st.T.reshape((-1, Yall_st.shape[1], Yall_st.shape[0]))
-            )
-
-            maxr2s.append(themaxr2)
-
-        f.close()
-
-    print(maxr2s)
-    print(iccs)
-
-
-def generate_long_sequence():
-    f = tables.open_file(f"/mnt/e/data_derived/packlab-mst/ju337.mat", "r")
-    X_st, Xidx_st, Y_st, Yall_st = generate_supertune_sequence(f, 40)
-    f.close()
-
-    fout = tables.open_file(f"/mnt/d/Documents/brain-scorer/scripts/st.h5", "w")
-    fout.create_array("/", "X_report", obj=X_st)
-    fout.create_array("/", "Xidx_report", obj=Xidx_st)
-    fout.create_array("/", "Y_report", obj=Y_st)
-    fout.close()
-
-
 if __name__ == "__main__":
-    # generate_matched_sequences()
-    # get_all_maxr2()
-    # generate_unmatched_sequences()
-    generate_long_sequence()
+    generate_matched_sequences()

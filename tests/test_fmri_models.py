@@ -11,7 +11,7 @@ import torch
 import unittest
 
 
-from fmri_models import (
+from models import (
     get_dataset,
     preprocess_data,
     get_feature_model,

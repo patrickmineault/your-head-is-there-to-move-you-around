@@ -16,7 +16,8 @@ import scipy
 import scipy.ndimage
 
 sys.path.append("../")
-from fmri_models import get_feature_model
+from paths import *
+from models import get_feature_model
 
 import collections
 import torch
@@ -185,7 +186,7 @@ if __name__ == "__main__":
     args = wrap(
         {
             "features": "airsim_04",
-            "ckpt_root": "../pretrained",
+            "ckpt_root": CHECKPOINTS,
             "slowfast_root": "../../slowfast",
             "ntau": 16,
             "nt": 1,
