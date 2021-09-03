@@ -2,7 +2,12 @@ import sys
 
 sys.path.append("../")
 
-from convex_models import compute_boosting_estimate, compute_ridge_estimate
+from convex_models import (
+    compute_boosting_estimate,
+    compute_ridge_estimate,
+    compute_l1_estimate,
+)
+
 import numpy as np
 import tempfile
 import time
@@ -85,6 +90,46 @@ class TestConvexModels(unittest.TestCase):
         splits = np.arange(5000) % 5
 
         results, weights = compute_boosting_estimate(X, y, X_report, y_report, splits)
+        self.assertGreater(
+            np.corrcoef(weights["W"].squeeze(), w.cpu().detach().numpy())[0, 1], 0.95
+        )
+
+        self.assertLess((weights["W"] != 0).sum(), 100)
+        self.assertGreater(results["corrs_report_mean"], 0.95)
+
+    def test_l1(self):
+        X = torch.randn((1000, 10), dtype=torch.float32, device="cuda")
+        w = torch.exp(-torch.arange(10, dtype=torch.float32, device="cuda"))
+        y = X @ w + torch.randn(1000, dtype=torch.float32, device="cuda")
+        y = y.reshape(y.shape[0], 1)
+
+        X_report = torch.randn((1000, 10), dtype=torch.float32, device="cuda")
+        y_report = X_report @ w
+        y_report = y_report.reshape(y_report.shape[0], 1)
+
+        splits = np.arange(1000) % 5
+
+        results, weights = compute_l1_estimate(X, y, X_report, y_report, splits)
+        self.assertGreater(
+            np.corrcoef(weights["W"].squeeze(), w.cpu().detach().numpy())[0, 1], 0.95
+        )
+
+        self.assertLess((weights["W"] != 0).sum(), 10)
+        self.assertGreater(results["corrs_report_mean"], 0.95)
+
+    def test_l1_big(self):
+        X = torch.randn((5000, 20000), dtype=torch.float32, device="cuda")
+        w = torch.exp(-torch.arange(20000, dtype=torch.float32, device="cuda"))
+        y = X @ w + torch.randn(5000, dtype=torch.float32, device="cuda")
+        y = y.reshape(y.shape[0], 1)
+
+        X_report = torch.randn((5000, 20000), dtype=torch.float32, device="cuda")
+        y_report = X_report @ w
+        y_report = y_report.reshape(y_report.shape[0], 1)
+
+        splits = np.arange(5000) % 5
+
+        results, weights = compute_l1_estimate(X, y, X_report, y_report, splits)
         self.assertGreater(
             np.corrcoef(weights["W"].squeeze(), w.cpu().detach().numpy())[0, 1], 0.95
         )

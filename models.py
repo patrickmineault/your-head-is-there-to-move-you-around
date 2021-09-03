@@ -350,7 +350,7 @@ def get_dataset(args, fold):
 
     if args.dataset == "pvc1":
         data = pvc1.PVC1(
-            os.path.join(args.data_root, "crcns-ringach-data"),
+            os.path.join(args.data_root, "crcns-pvc1"),
             split=fold,
             nt=nt,
             nx=112,
@@ -361,7 +361,7 @@ def get_dataset(args, fold):
         )
     elif args.dataset == "pvc1-repeats":
         data = pvc1.PVC1(
-            os.path.join(args.data_root, "crcns-ringach-data"),
+            os.path.join(args.data_root, "crcns-pvc1"),
             split=fold,
             nt=nt,
             nx=112,

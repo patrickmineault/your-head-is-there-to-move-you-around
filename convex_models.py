@@ -2,6 +2,10 @@ import numpy as np
 import time
 import torch
 
+import sklearn
+import sklearn.model_selection
+import sklearn.linear_model
+
 from training import compute_corr
 
 
@@ -100,9 +104,6 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
     max_iter = 100
     kfold = splits.max() + 1
 
-    Y = Y.to(device="cuda")
-    X = X.to(device="cuda")
-
     # Store predictions in main memory to prevent out-of-memory errors.
     Y_preds = torch.zeros(Y.shape[0], Y.shape[1], max_iter, dtype=torch.float32)
 
@@ -112,6 +113,10 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
             Y[splits != i, :],
             X[splits == i, :],
         )
+
+        X_train = X_train.to(device="cuda")
+        Y_train = Y_train.to(device="cuda")
+        X_test = X_test.to(device="cuda")
 
         m = X_train.mean(axis=0, keepdims=True)
         s = X_train.std(axis=0, keepdims=True) + 1e-6
@@ -123,7 +128,7 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
         R = Y_train - Y_train.mean(axis=0, keepdims=True)
 
         for j in range(max_iter):
-            dw = X_train.T @ R / X_train.shape[0]
+            dw = (X_train.T @ R) / X_train.shape[0]
             the_best = abs(dw).argmax(axis=0)
             w[the_best, np.arange(Y.shape[1])] += (
                 alpha * dw[the_best, np.arange(Y.shape[1])]
@@ -135,6 +140,8 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
 
             Y_pred = X_test @ w
             Y_preds[splits == i, :, j] = Y_pred.to(device="cpu")
+
+        del X_train, Y_train, X_test
 
     Y = Y.to(device="cpu")
     var_baseline = ((Y - Y.mean(axis=0, keepdims=True)) ** 2).mean(0)
@@ -151,6 +158,7 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
     X_report = X_report - X_report.mean(axis=0, keepdims=True)
     Y_report = Y_report - Y_report.mean(axis=0, keepdims=True)
 
+    X = X.to(device="cuda")
     X_report = X_report.to(device="cuda")
     Y_report = Y_report.to(device="cuda")
 
@@ -192,5 +200,51 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
     }
 
     weights = {"W": w.cpu().detach().numpy(), "Y_preds": Y_preds.cpu().detach().numpy()}
+
+    return results, weights
+
+
+def compute_l1_estimate(X, Y, X_report, Y_report, splits):
+    if Y.shape[1] > 1:
+        raise NotImplementedError("Y.shape[1] > 1 not implemented")
+
+    cv = sklearn.model_selection.PredefinedSplit(splits)
+    std = sklearn.preprocessing.StandardScaler()
+
+    X = std.fit_transform(X.detach().cpu().numpy())
+    X_report = std.transform(X_report.detach().cpu().numpy())
+    Y = Y.detach().cpu().numpy()
+    Y_report = Y_report.detach().cpu().numpy()
+
+    model = sklearn.linear_model.LassoCV(cv=cv, n_alphas=25)
+    model.fit(X, Y.ravel())
+
+    Y_preds = model.predict(X).reshape((-1, 1))
+
+    var_baseline = ((Y - Y.mean(axis=0, keepdims=True)) ** 2).mean(0)
+    var_after = ((Y.reshape(Y.shape[0], Y.shape[1], 1) - Y_preds) ** 2).mean(0)
+    r2_cvs = 1 - var_after / var_baseline.reshape((-1, 1))
+
+    Y_preds = model.predict(X_report).reshape((-1, 1))
+
+    var_baseline = ((Y_report - Y_report.mean(axis=0, keepdims=True)) ** 2).mean(0)
+    var_after = ((Y_report - Y_preds) ** 2).mean(0)
+    r2_report = 1 - var_after / var_baseline
+
+    corrs_report = compute_corr(
+        torch.tensor(Y_report, dtype=torch.float32, device="cuda"),
+        torch.tensor(Y_preds, dtype=torch.float32, device="cuda"),
+    )
+
+    results = {
+        "r2_cvs": r2_cvs,
+        "r2_report": r2_report,
+        "corrs_report": corrs_report.cpu().detach().numpy(),
+        "corrs_report_mean": corrs_report.cpu().detach().numpy().mean(),
+        "corrs_report_median": np.median(corrs_report.cpu().detach().numpy()),
+        "w_shape": model.coef_.shape,
+    }
+
+    weights = {"W": model.coef_, "Y_preds": Y_preds}
 
     return results, weights
