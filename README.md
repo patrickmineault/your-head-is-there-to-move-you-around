@@ -1,6 +1,6 @@
 # Your head is there to move you around
 
-This repo contains information necessary to run the code in "Your head is there to move you around". 
+This repo contains information necessary to run the code in "Your head is there to move you around". Preprint here: https://www.biorxiv.org/content/10.1101/2021.07.09.451701v2.abstract
 
 # Prelims
 
