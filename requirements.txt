@@ -10,3 +10,6 @@ tables
 tqdm
 wandb
 GPUtil
+tensorboard
+git+https://github.com/patrickmineault/research_code.git
+git+https://github.com/greentfrapp/lucent.git
