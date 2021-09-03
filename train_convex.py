@@ -16,7 +16,11 @@ from models import (
     tune_batch_size,
 )
 
-from convex_models import compute_ridge_estimate, compute_boosting_estimate
+from convex_models import (
+    compute_ridge_estimate,
+    compute_boosting_estimate,
+    compute_l1_estimate,
+)
 
 from research_code.cka_step4 import cka
 
@@ -119,6 +123,8 @@ def compute_layer(
         results, weights = compute_ridge_estimate(X, Y, X_report, Y_report, splits)
     elif args.method == "boosting":
         results, weights = compute_boosting_estimate(X, Y, X_report, Y_report, splits)
+    elif args.method == "l1":
+        results, weights = compute_l1_estimate(X, Y, X_report, Y_report, splits)
     else:
         raise NotImplementedError("Method not implemented")
 
@@ -159,6 +165,7 @@ def check_existing(args, metadata):
                 {"config.features": args.features},
                 {"config.subset": args.subset},
                 {"config.method": args.method},
+                {"config.resize": args.resize},
                 {"state": "finished"},
             ]
         },
@@ -192,6 +199,9 @@ def main(args):
 
     args.ntau = trainset.ntau
     feature_model, activations, metadata = get_feature_model(args)
+
+    # Override size
+    metadata["sz"] = args.resize
 
     if args.skip_existing:
         exists = check_existing(args, metadata)
@@ -313,6 +323,13 @@ if __name__ == "__main__":
         "--method",
         default="ridge",
         help="Method to fit the model (ridge or boosting)",
+    )
+
+    parser.add_argument(
+        "--resize",
+        default=112,
+        type=int,
+        help="Size of stimulus",
     )
 
     args = parser.parse_args()

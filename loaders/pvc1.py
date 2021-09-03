@@ -39,7 +39,7 @@ class PVC1(torch.utils.data.Dataset):
 
     def __init__(
         self,
-        root="./crcns-ringach-data",
+        root="./crcns-pvc1",
         nx=224,
         ny=224,
         nt=20,
