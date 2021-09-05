@@ -7,11 +7,16 @@ PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 pip install -r requirements.txt
 aws s3 cp s3://yourheadisthere/ /data
 
+ls -al /data
+ls -al /data/checkpoints
+ls -al /data/data_derived
+ls -al /data/data_derived/crcns-mt2
+
 size=8
-ckpt_root=/data/checkpoints;
-data_root=/data/data_derived;
-cache_root=/cache;
-slowfast_root=../slowfast;
+ckpt_root=/data/checkpoints
+data_root=/data/data_derived
+cache_root=/cache
+slowfast_root=../slowfast
 
 models=(airsim_04 MotionNet)
 datasets=(mt2)
