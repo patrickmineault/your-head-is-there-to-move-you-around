@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-aws s3 cp s3://yourheadisthere/ /data
+pip install -e .
+# aws s3 cp s3://yourheadisthere/ /data
 
 size=8
 ckpt_root=/data/checkpoints;
