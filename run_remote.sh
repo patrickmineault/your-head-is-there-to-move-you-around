@@ -19,38 +19,35 @@ cache_root=/cache
 slowfast_root=../slowfast
 
 models=(airsim_04 MotionNet)
-datasets=(mt2)
-max_cells=(43)
+dataset=mt2
+max_cell=43
 
-for dataset_num in {0..0};
+for model in "${models[@]}";
 do
-    dataset=${datasets[$dataset_num]}
-    max_cell=${max_cells[$dataset_num]}
-    for model in "${models[@]}";
+    echo "$dataset" "$model"
+    for ((subset = 0; subset <= $max_cell; subset++))
     do
-        echo "$dataset" "$model"
-        for ((subset = 0; subset <= $max_cell; subset++))
-        do
-            python train_convex.py \
-                --exp_name mt_boosting_revision \
-                --dataset "$dataset" \
-                --features "$model" \
-                --subset "$subset" \
-                --batch_size 8 \
-                --cache_root $cache_root \
-                --ckpt_root $ckpt_root \
-                --data_root $data_root \
-                --slowfast_root $slowfast_root \
-                --aggregator downsample \
-                --aggregator_sz $size \
-                --skip_existing \
-                --subsample_layers \
-                --autotune \
-                --no_save \
-                --save_predictions \
-                --method boosting
-            # Clear cache.
-            rm -f $cache_root/*
-        done
+        echo "Fitting cell $subset"
+        python train_convex.py \
+            --exp_name mt_boosting_revision \
+            --dataset "$dataset" \
+            --features "$model" \
+            --subset "$subset" \
+            --batch_size 8 \
+            --cache_root $cache_root \
+            --ckpt_root $ckpt_root \
+            --data_root $data_root \
+            --slowfast_root $slowfast_root \
+            --aggregator downsample \
+            --aggregator_sz $size \
+            --skip_existing \
+            --subsample_layers \
+            --autotune \
+            --no_save \
+            --save_predictions \
+            --method boosting
+            
+        # Clear cache.
+        rm -f $cache_root/*
     done
 done

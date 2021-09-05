@@ -394,6 +394,7 @@ def get_dataset(args, fold):
             single_cell=int(args.subset),
         )
     elif args.dataset == "mt2":
+        print(os.path.join(args.data_root, "crcns-mt2"))
         data = mt2.MT2(
             os.path.join(args.data_root, "crcns-mt2"),
             split=fold,
