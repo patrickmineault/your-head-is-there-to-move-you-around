@@ -4,6 +4,7 @@ set -e
 # There's something about the indirection where the environment variables don't get forwarded, I don't totally get it.
 PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+pip install -r requirements.txt
 aws s3 cp s3://yourheadisthere/ /data
 
 size=8
