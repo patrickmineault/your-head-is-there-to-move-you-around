@@ -5,7 +5,7 @@ set -e
 PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 pip install -r requirements.txt
-aws s3 cp s3://yourheadisthere/ /data
+aws s3 sync s3://yourheadisthere/ /data
 
 ls -al /data
 ls -al /data/checkpoints
