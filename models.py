@@ -1,5 +1,6 @@
 import collections
 import git
+import glob
 import numpy as np
 import os
 import sklearn
@@ -394,9 +395,13 @@ def get_dataset(args, fold):
             single_cell=int(args.subset),
         )
     elif args.dataset == "mt2":
-        print(os.path.join(args.data_root, "crcns-mt2"))
+        data_root = os.path.join(args.data_root, "crcns-mt2")
+        print(data_root)
+        print(os.system(f'ls -al ${data_root}'))
+        print(glob.glob(os.path.join(data_root, '*.mat')))
+
         data = mt2.MT2(
-            os.path.join(args.data_root, "crcns-mt2"),
+            data_root,
             split=fold,
             nt=nt,
             nx=112,
