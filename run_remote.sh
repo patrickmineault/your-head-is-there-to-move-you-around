@@ -1,18 +1,41 @@
 #!/bin/bash
 set -e
 
-# There's something about the indirection where the environment variables don't get forwarded, I don't totally get it.
+# Somehow, the path is not correctly set - I don't totally get it
 PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+case $DATASET in
+    "crcns-pvc1")
+        dataset_num=0
+        ;;
+    "crcns-pvc4")
+        dataset_num=1
+        ;;
+    "crcns-mt1")
+        dataset_num=2
+        ;;
+    "crcns-mt2")
+        dataset_num=3
+        ;;
+    "packlab-mst")
+        dataset_num=4
+        ;;
+    *)
+        echo "Unknown dataset"
+        exit 0;
+esac
+
+datasets=(mt1_norm_neutralbg mt2 pvc1-repeats pvc4 mst_norm_neutralbg)
+max_cells=(83 43 22 24 35)
+dataset=${datasets[$dataset_num]}
+max_cell=${max_cells[$dataset_num]}
+
 pip install -r requirements.txt
-aws s3 sync s3://yourheadisthere/ /data
+aws s3 sync "s3://yourheadisthere/data_derived/$DATASET" "/data/data_derived/$DATASET"
+
+# Not sure if actually necessary.
 chown -R nobody:nogroup /data
 chown -R nobody:nogroup /cache
-
-ls -al /data
-ls -al /data/checkpoints
-ls -al /data/data_derived
-ls -al /data/data_derived/crcns-mt2
 
 size=8
 ckpt_root=/data/checkpoints
