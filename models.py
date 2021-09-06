@@ -92,7 +92,7 @@ class Downsampler(nn.Module):
             X_ = downsample_3d(X, self.sz)
         else:
             skip = X.shape[-1] // self.sz
-            if skip > 0:
+            if skip > 1:
                 X_ = X[:, :, :, skip // 2 :: skip, skip // 2 :: skip]
             else:
                 X_ = X
