@@ -65,9 +65,10 @@ def downsample_3d(X, sz):
 
 
 class Downsampler(nn.Module):
-    def __init__(self, sz):
+    def __init__(self, sz, only_t=False):
         super(Downsampler, self).__init__()
         self.sz = sz
+        self.only_t = only_t
 
     def forward(self, data):
         nt = 4
@@ -87,7 +88,10 @@ class Downsampler(nn.Module):
         stride = ntau // (nt + 1)  # Always use at most 4 time points
         delta = stride // 2
 
-        X_ = downsample_3d(X, self.sz)
+        if not self.only_t:
+            X_ = downsample_3d(X, self.sz)
+        else:
+            X_ = X
 
         if ny == 1:
             slc = slice(delta, delta + nt * stride)
@@ -335,6 +339,8 @@ def get_aggregator(metadata, args):
         return Averager()
     elif args.aggregator == "downsample":
         return Downsampler(args.aggregator_sz)
+    elif args.aggregator == "downsample_t":
+        return Downsampler(None, only_t=True)
     else:
         raise NotImplementedError(f"Aggregator {args.aggregator} not implemented.")
 
@@ -397,8 +403,8 @@ def get_dataset(args, fold):
     elif args.dataset == "mt2":
         data_root = os.path.join(args.data_root, "crcns-mt2")
         print(data_root)
-        print(os.system(f'ls -al {data_root}'))
-        print(glob.glob(os.path.join(data_root, '*.mat')))
+        print(os.system(f"ls -al {data_root}"))
+        print(glob.glob(os.path.join(data_root, "*.mat")))
 
         data = mt2.MT2(
             data_root,
