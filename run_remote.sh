@@ -6,8 +6,8 @@ PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 pip install -r requirements.txt
 aws s3 sync s3://yourheadisthere/ /data
-chown nobody:nogroup /data
-chown nobody:nogroup /cache
+chown -R nobody:nogroup /data
+chown -R nobody:nogroup /cache
 
 ls -al /data
 ls -al /data/checkpoints
