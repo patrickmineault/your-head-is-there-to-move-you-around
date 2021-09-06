@@ -397,7 +397,7 @@ def get_dataset(args, fold):
     elif args.dataset == "mt2":
         data_root = os.path.join(args.data_root, "crcns-mt2")
         print(data_root)
-        print(os.system(f'ls -al ${data_root}'))
+        print(os.system(f'ls -al {data_root}'))
         print(glob.glob(os.path.join(data_root, '*.mat')))
 
         data = mt2.MT2(
