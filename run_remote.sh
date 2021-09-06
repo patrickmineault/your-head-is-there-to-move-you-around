@@ -6,6 +6,8 @@ PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 pip install -r requirements.txt
 aws s3 sync s3://yourheadisthere/ /data
+chown nobody:nogroup /data
+chown nobody:nogroup /cache
 
 ls -al /data
 ls -al /data/checkpoints
@@ -46,7 +48,7 @@ do
             --no_save \
             --save_predictions \
             --method boosting
-            
+
         # Clear cache.
         rm -f $cache_root/*
     done
