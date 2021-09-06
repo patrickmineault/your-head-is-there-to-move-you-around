@@ -37,15 +37,13 @@ aws s3 sync "s3://yourheadisthere/data_derived/$DATASET" "/data/data_derived/$DA
 chown -R nobody:nogroup /data
 chown -R nobody:nogroup /cache
 
-size=8
+size=21
 ckpt_root=/data/checkpoints
 data_root=/data/data_derived
 cache_root=/cache
 slowfast_root=../slowfast
 
 models=(airsim_04 MotionNet)
-dataset=mt2
-max_cell=43
 
 for model in "${models[@]}";
 do
@@ -54,7 +52,7 @@ do
     do
         echo "Fitting cell $subset"
         python train_convex.py \
-            --exp_name mt_boosting_revision \
+            --exp_name boosting_no_resize \
             --dataset "$dataset" \
             --features "$model" \
             --subset "$subset" \
@@ -63,7 +61,7 @@ do
             --ckpt_root $ckpt_root \
             --data_root $data_root \
             --slowfast_root $slowfast_root \
-            --aggregator downsample \
+            --aggregator downsample_t \
             --aggregator_sz $size \
             --skip_existing \
             --subsample_layers \
