@@ -91,7 +91,11 @@ class Downsampler(nn.Module):
         if not self.only_t:
             X_ = downsample_3d(X, self.sz)
         else:
-            X_ = X
+            skip = X.shape[-1] // self.sz
+            if skip > 0:
+                X_ = X[:, :, :, skip // 2 :: skip, skip // 2 :: skip]
+            else:
+                X_ = X
 
         if ny == 1:
             slc = slice(delta, delta + nt * stride)
@@ -340,7 +344,7 @@ def get_aggregator(metadata, args):
     elif args.aggregator == "downsample":
         return Downsampler(args.aggregator_sz)
     elif args.aggregator == "downsample_t":
-        return Downsampler(None, only_t=True)
+        return Downsampler(args.aggregator_sz, only_t=True)
     else:
         raise NotImplementedError(f"Aggregator {args.aggregator} not implemented.")
 
