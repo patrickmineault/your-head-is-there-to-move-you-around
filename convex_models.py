@@ -104,6 +104,15 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
     max_iter = 100
     kfold = splits.max() + 1
 
+    t = torch.cuda.get_device_properties(0).total_memory
+    print(t)
+    print(X.numel() * 4 * 2.25)
+    if t > X.numel() * 4 * 2.25:
+        # CUDA is much faster, but has less memory.
+        target = "cuda"
+    else:
+        target = "cpu"
+
     # Store predictions in main memory to prevent out-of-memory errors.
     Y_preds = torch.zeros(Y.shape[0], Y.shape[1], max_iter, dtype=torch.float32)
 
@@ -114,9 +123,9 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
             X[splits == i, :],
         )
 
-        X_train = X_train.to(device="cuda")
-        Y_train = Y_train.to(device="cuda")
-        X_test = X_test.to(device="cuda")
+        X_train = X_train.to(device=target)
+        Y_train = Y_train.to(device=target)
+        X_test = X_test.to(device=target)
 
         m = X_train.mean(axis=0, keepdims=True)
         s = X_train.std(axis=0, keepdims=True) + 1e-6
@@ -124,7 +133,7 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
         X_train.add_(-m)
         X_train.divide_(s)
 
-        w = torch.zeros((X.shape[1], Y.shape[1]), dtype=torch.float32, device="cuda")
+        w = torch.zeros((X.shape[1], Y.shape[1]), dtype=torch.float32, device=target)
         R = Y_train - Y_train.mean(axis=0, keepdims=True)
 
         for j in range(max_iter):
@@ -158,15 +167,15 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
     X_report = X_report - X_report.mean(axis=0, keepdims=True)
     Y_report = Y_report - Y_report.mean(axis=0, keepdims=True)
 
-    X = X.to(device="cuda")
-    X_report = X_report.to(device="cuda")
-    Y_report = Y_report.to(device="cuda")
+    X = X.to(device=target)
+    X_report = X_report.to(device=target)
+    Y_report = Y_report.to(device=target)
 
-    Y = Y.to(device="cuda")
+    Y = Y.to(device=target)
     R = Y - Y.mean(axis=0, keepdims=True)
     R = R / R.std(axis=0, keepdims=True)
 
-    w = torch.zeros((X.shape[1], Y.shape[1]), dtype=torch.float32, device="cuda")
+    w = torch.zeros((X.shape[1], Y.shape[1]), dtype=torch.float32, device=target)
 
     for j in range(max(best_iters)):
         dw = X.T @ R / X.shape[0]

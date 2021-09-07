@@ -91,9 +91,9 @@ class Downsampler(nn.Module):
         if not self.only_t:
             X_ = downsample_3d(X, self.sz)
         else:
-            skip = X.shape[-1] // self.sz
+            skip = round(X.shape[-1] / self.sz)
             if skip > 1:
-                X_ = X[:, :, :, skip // 2 :: skip, skip // 2 :: skip]
+                X_ = X[:, :, :, (skip - 1) // 2 :: skip, (skip - 1) // 2 :: skip]
             else:
                 X_ = X
 
@@ -676,6 +676,15 @@ def get_feature_model(args):
         layers = collections.OrderedDict(
             [(f"layer{i:02}", l[-1]) for i, l in enumerate(model.layers)]
         )
+
+        if args.subsample_layers:
+            layers = collections.OrderedDict(
+                [
+                    (f"layer{i:02}", l[-1])
+                    for i, l in enumerate(model.layers)
+                    if i in (1, 2, 3, 4, 5)
+                ]
+            )
 
         metadata = {"sz": 112, "threed": True}
     elif args.features.startswith("cpc"):
