@@ -25,8 +25,8 @@ case $DATASET in
         exit 0;
 esac
 
-datasets=(mt1_norm_neutralbg mt2 pvc1-repeats pvc4 mst_norm_neutralbg)
-max_cells=(83 43 22 24 35)
+datasets=(pvc1-repeats pvc4 mt1_norm_neutralbg mt2 mst_norm_neutralbg)
+max_cells=(22 24 83 43 35)
 dataset=${datasets[$dataset_num]}
 max_cell=${max_cells[$dataset_num]}
 
@@ -44,6 +44,7 @@ data_root=/data/data_derived
 cache_root=/cache
 slowfast_root=../slowfast
 
+# airsim_04 MotionNet
 model=$MODEL
 echo "$dataset" "$model"
 for ((subset = 0; subset <= $max_cell; subset++))
