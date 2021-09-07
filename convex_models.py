@@ -105,9 +105,10 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
     kfold = splits.max() + 1
 
     t = torch.cuda.get_device_properties(0).total_memory
-    print(t)
-    print(X.numel() * 4 * 2.25)
-    if t > X.numel() * 4 * 2.25:
+    
+    nums = X.numel() * 4 * 2.5
+    print(t, nums)
+    if t > X.numel() * nums:
         # CUDA is much faster, but has less memory.
         target = "cuda"
     else:
