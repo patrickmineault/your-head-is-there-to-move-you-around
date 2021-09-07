@@ -44,34 +44,30 @@ data_root=/data/data_derived
 cache_root=/cache
 slowfast_root=../slowfast
 
-models=(airsim_04 MotionNet)
-
-for model in "${models[@]}";
+model=$MODEL
+echo "$dataset" "$model"
+for ((subset = 0; subset <= $max_cell; subset++))
 do
-    echo "$dataset" "$model"
-    for ((subset = 0; subset <= $max_cell; subset++))
-    do
-        echo "Fitting cell $subset"
-        python train_convex.py \
-            --exp_name boosting_no_resize \
-            --dataset "$dataset" \
-            --features "$model" \
-            --subset "$subset" \
-            --batch_size 8 \
-            --cache_root $cache_root \
-            --ckpt_root $ckpt_root \
-            --data_root $data_root \
-            --slowfast_root $slowfast_root \
-            --aggregator downsample_t \
-            --aggregator_sz $size \
-            --skip_existing \
-            --subsample_layers \
-            --autotune \
-            --no_save \
-            --save_predictions \
-            --method boosting
+    echo "Fitting cell $subset"
+    python train_convex.py \
+        --exp_name boosting_no_resize \
+        --dataset "$dataset" \
+        --features "$model" \
+        --subset "$subset" \
+        --batch_size 8 \
+        --cache_root $cache_root \
+        --ckpt_root $ckpt_root \
+        --data_root $data_root \
+        --slowfast_root $slowfast_root \
+        --aggregator downsample_t \
+        --aggregator_sz $size \
+        --skip_existing \
+        --subsample_layers \
+        --autotune \
+        --no_save \
+        --save_predictions \
+        --method boosting
 
-        # Clear cache.
-        rm -f $cache_root/*
-    done
+    # Clear cache.
+    rm -f $cache_root/*
 done
