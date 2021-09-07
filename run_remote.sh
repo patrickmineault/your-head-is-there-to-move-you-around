@@ -25,6 +25,8 @@ case $DATASET in
         exit 0;
 esac
 
+df -h
+
 datasets=(pvc1-repeats pvc4 mt1_norm_neutralbg mt2 mst_norm_neutralbg)
 max_cells=(22 24 83 43 35)
 dataset=${datasets[$dataset_num]}
