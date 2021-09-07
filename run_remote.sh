@@ -25,6 +25,7 @@ case $DATASET in
         exit 0;
 esac
 
+echo "Free space info"
 df -h
 
 datasets=(pvc1-repeats pvc4 mt1_norm_neutralbg mt2 mst_norm_neutralbg)
