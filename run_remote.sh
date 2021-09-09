@@ -7,18 +7,23 @@ PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 case $DATASET in
     "crcns-pvc1")
         dataset_num=0
+        size=21
         ;;
     "crcns-pvc4")
         dataset_num=1
+        size=21
         ;;
     "crcns-mt1")
         dataset_num=2
+        size=21
         ;;
     "crcns-mt2")
         dataset_num=3
+        size=16
         ;;
     "packlab-mst")
         dataset_num=4
+        size=21
         ;;
     *)
         echo "Unknown dataset"
@@ -44,7 +49,6 @@ aws s3 sync "s3://yourheadisthere/checkpoints" "/data/checkpoints"
 chown -R nobody:nogroup /data
 chown -R nobody:nogroup /cache
 
-size=21
 ckpt_root=/data/checkpoints
 data_root=/data/data_derived
 cache_root=/cache
