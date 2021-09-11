@@ -15,7 +15,7 @@ case $DATASET in
         ;;
     "crcns-mt1")
         dataset_num=2
-        size=16
+        size=12
         ;;
     "crcns-mt2")
         dataset_num=3
