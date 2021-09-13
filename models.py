@@ -241,7 +241,7 @@ def preprocess_data(loader, model, aggregator, activations, metadata, args):
     # Check if cache exists for this model.
     repo = git.Repo(search_parent_directories=True)
     sha = repo.head.object.hexsha
-    cache_file = f'{args.features}_{metadata["sz"]}_{args.dataset}_{args.subset}_{loader.dataset.split}_{args.aggregator}_{sha}.h5'
+    cache_file = f'{args.features}_{metadata["sz"]}_{args.dataset}_{args.subset}_{loader.dataset.split}_{args.aggregator}_{args.aggregator_sz}_{sha}.h5'
     cache_file = os.path.join(args.cache_root, cache_file)
 
     if not os.path.exists(cache_file):
@@ -322,6 +322,8 @@ def preprocess_data(loader, model, aggregator, activations, metadata, args):
 
         progress_bar.close()
         h5file.close()
+    else:
+        print("Cache file exists")
 
     h5file = tables.open_file(cache_file, mode="r")
     try:
@@ -406,9 +408,6 @@ def get_dataset(args, fold):
         )
     elif args.dataset == "mt2":
         data_root = os.path.join(args.data_root, "crcns-mt2")
-        print(data_root)
-        print(os.system(f"ls -al {data_root}"))
-        print(glob.glob(os.path.join(data_root, "*.mat")))
 
         data = mt2.MT2(
             data_root,
