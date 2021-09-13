@@ -1,3 +1,5 @@
+from logging import debug
+
 import collections
 import git
 import glob
@@ -201,7 +203,7 @@ def resize(movie, width):
 
 def tune_batch_size(model, loader, metadata):
     """This doesn't help _that_ much, about 20%."""
-    print("Tuning batch size")
+    debug("Tuning batch size")
 
     sampler_size = 4
 
@@ -232,7 +234,7 @@ def tune_batch_size(model, loader, metadata):
     multiplier = devices[0].memoryTotal // devices[0].memoryUsed
 
     batch_size = int(multiplier * sampler_size)
-    print(f"Automatic batch size of {batch_size}")
+    debug(f"Automatic batch size of {batch_size}")
     return batch_size
 
 
@@ -244,11 +246,11 @@ def preprocess_data(loader, model, aggregator, activations, metadata, args):
     cache_file = f'{args.features}_{metadata["sz"]}_{args.dataset}_{args.subset}_{loader.dataset.split}_{args.aggregator}_{args.aggregator_sz}_{sha}.h5'
     cache_file = os.path.join(args.cache_root, cache_file)
 
-    print(cache_file)
-    print(os.system(f'ls -al {cache_file}'))
+    debug(cache_file)
+    debug(os.system(f'ls -al {cache_file}'))
 
     if not os.path.exists(cache_file):
-        print("Create cache file")
+        debug("Create cache file")
         h5file = tables.open_file(cache_file, mode="w", title="Cache file")
         layers = {}
         outputs = None
@@ -276,6 +278,7 @@ def preprocess_data(loader, model, aggregator, activations, metadata, args):
                             fit_layer = aggregator(al).cpu().detach().numpy()
                         except NotImplementedError as e:
                             # This is because the output is too small, so the aggregator doesn't work.
+                            debug("The output is too small")
                             # print(e)
                             # raise(e)
                             continue
@@ -326,7 +329,7 @@ def preprocess_data(loader, model, aggregator, activations, metadata, args):
         progress_bar.close()
         h5file.close()
     else:
-        print("Cache file exists")
+        debug("Cache file exists")
 
     h5file = tables.open_file(cache_file, mode="r")
     try:

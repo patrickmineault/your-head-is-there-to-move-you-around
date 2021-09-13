@@ -1,5 +1,6 @@
 import argparse
 import faulthandler
+import logging
 import numpy as np
 import pickle
 import os
@@ -242,6 +243,8 @@ def main(args):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level='DEBUG')
+
     faulthandler.enable()
     desc = "Map a pretrained neural net to a time series of brain data (neurons or brains) using ridge regression."
     parser = argparse.ArgumentParser(description=desc)
