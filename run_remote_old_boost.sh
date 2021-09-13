@@ -73,7 +73,8 @@ do
         --autotune \
         --no_save \
         --save_predictions \
-        --method boosting
+        --method boosting \
+        --resize 168
 
     # Clear cache.
     rm -f $cache_root/*
