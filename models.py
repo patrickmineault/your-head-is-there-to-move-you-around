@@ -244,6 +244,9 @@ def preprocess_data(loader, model, aggregator, activations, metadata, args):
     cache_file = f'{args.features}_{metadata["sz"]}_{args.dataset}_{args.subset}_{loader.dataset.split}_{args.aggregator}_{args.aggregator_sz}_{sha}.h5'
     cache_file = os.path.join(args.cache_root, cache_file)
 
+    print(cache_file)
+    print(os.system(f'ls -al {cache_file}'))
+
     if not os.path.exists(cache_file):
         print("Create cache file")
         h5file = tables.open_file(cache_file, mode="w", title="Cache file")
