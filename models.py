@@ -204,7 +204,13 @@ def resize(movie, width):
 def tune_batch_size(model, loader, metadata):
     """This doesn't help _that_ much, about 20%."""
     debug("Tuning batch size")
+    # Tune the batch size to maximize throughput.
+    import GPUtil
 
+    devices = GPUtil.getGPUs()
+    debug(f"{len(devices)} GPU devices")
+
+    start_mem = devices[0].memoryFree
     sampler_size = 4
 
     Xs = []
@@ -215,8 +221,8 @@ def tune_batch_size(model, loader, metadata):
             X, Y = loaded
         else:
             X, _, _, Y = loaded
-        Xs.append(torch.tensor(X, device="cuda"))
-        Ys.append(torch.tensor(Y, device="cuda"))
+        Xs.append(X)
+        Ys.append(Y)
 
     X = torch.stack(Xs, axis=0)
     Y = torch.stack(Ys, axis=0)
@@ -227,11 +233,7 @@ def tune_batch_size(model, loader, metadata):
 
     _ = model(X)
 
-    # Tune the batch size to maximize throughput.
-    import GPUtil
-
-    devices = GPUtil.getGPUs()
-    multiplier = devices[0].memoryTotal // devices[0].memoryUsed
+    multiplier = start_mem // devices[0].memoryUsed
 
     batch_size = int(multiplier * sampler_size)
     debug(f"Automatic batch size of {batch_size}")
