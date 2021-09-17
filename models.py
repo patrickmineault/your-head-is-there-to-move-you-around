@@ -224,8 +224,8 @@ def tune_batch_size(model, loader, metadata):
         Xs.append(X)
         Ys.append(Y)
 
-    X = torch.stack(Xs, axis=0)
-    Y = torch.stack(Ys, axis=0)
+    X = torch.tensor(np.stack(Xs, axis=0))
+    Y = torch.tensor(np.stack(Ys, axis=0))
 
     X, Y = X.to(device="cuda"), Y.to(device="cuda")
 
