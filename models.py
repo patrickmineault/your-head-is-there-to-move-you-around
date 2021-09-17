@@ -207,37 +207,49 @@ def tune_batch_size(model, loader, metadata):
     # Tune the batch size to maximize throughput.
     import GPUtil
 
+    GPUtil.showUtilization(True, ['id', 'load', 'memoryUtil', 'memoryTotal', 'memoryUsed', 'memoryFree'])
+
     devices = GPUtil.getGPUs()
-    debug(f"{len(devices)} GPU devices")
+
+    X = 0
+    Y = 0
+    try:
+        # Use a doubling strategy to determine optimal batch size
+        for sampler_size in [4, 8, 16, 32, 64]:
+            del X
+            del Y
+
+            Xs = []
+            Ys = []
+            for idx in range(sampler_size):
+                loaded = loader[idx]
+                if len(loaded) == 2:
+                    X, Y = loaded
+                else:
+                    X, _, _, Y = loaded
+                Xs.append(X)
+                Ys.append(Y)
+
+            X = torch.tensor(np.stack(Xs, axis=0))
+            Y = torch.tensor(np.stack(Ys, axis=0))
+
+            X, Y = X.to(device="cuda"), Y.to(device="cuda")
+
+            X = resize(X, metadata["sz"])
+
+            _ = model(X)
+            debug(f"Test with {sampler_size} batch size")
+            GPUtil.showUtilization(True, ['id', 'load', 'memoryUtil', 'memoryTotal', 'memoryUsed', 'memoryFree'])
+
+    except RuntimeError:
+        sampler_size = sampler_size // 2
+
+    del X
+    del Y
     
-    start_mem = devices[0].memoryFree
-    sampler_size = 4
-
-    Xs = []
-    Ys = []
-    for idx in range(sampler_size):
-        loaded = loader[idx]
-        if len(loaded) == 2:
-            X, Y = loaded
-        else:
-            X, _, _, Y = loaded
-        Xs.append(X)
-        Ys.append(Y)
-
-    X = torch.tensor(np.stack(Xs, axis=0))
-    Y = torch.tensor(np.stack(Ys, axis=0))
-
-    X, Y = X.to(device="cuda"), Y.to(device="cuda")
-
-    X = resize(X, metadata["sz"])
-
-    _ = model(X)
-
-    devices = GPUtil.getGPUs()
-    multiplier = start_mem // devices[0].memoryUsed
-
-    batch_size = int(multiplier * sampler_size)
+    batch_size = sampler_size
     debug(f"Automatic batch size of {batch_size}")
+
     return batch_size
 
 
@@ -331,6 +343,8 @@ def preprocess_data(loader, model, aggregator, activations, metadata, args):
 
         progress_bar.close()
         h5file.close()
+        del X
+        del Y
     else:
         debug("Cache file exists")
 
