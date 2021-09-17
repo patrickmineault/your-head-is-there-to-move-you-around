@@ -209,7 +209,7 @@ def tune_batch_size(model, loader, metadata):
 
     devices = GPUtil.getGPUs()
     debug(f"{len(devices)} GPU devices")
-
+    
     start_mem = devices[0].memoryFree
     sampler_size = 4
 
@@ -233,6 +233,7 @@ def tune_batch_size(model, loader, metadata):
 
     _ = model(X)
 
+    devices = GPUtil.getGPUs()
     multiplier = start_mem // devices[0].memoryUsed
 
     batch_size = int(multiplier * sampler_size)
