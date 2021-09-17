@@ -4,6 +4,8 @@ set -e
 # Somehow, the path is not correctly set - I don't totally get it
 PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+sz=$SZ
+
 case $DATASET in
     "crcns-pvc1")
         dataset_num=0
@@ -77,7 +79,8 @@ do
         --autotune \
         --no_save \
         --save_predictions \
-        --method boosting
+        --method boosting \
+        --resize $sz
 
     # Clear cache.
     rm -f $cache_root/*
