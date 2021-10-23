@@ -43,9 +43,14 @@ max_cell=${max_cells[$dataset_num]}
 export AWS_RETRY_MODE=standard
 export AWS_MAX_ATTEMPTS=3
 
-pip install -r requirements.txt
-aws s3 sync "s3://yourheadisthere/data_derived/$DATASET" "/data/data_derived/$DATASET"
-aws s3 sync "s3://yourheadisthere/checkpoints" "/data/checkpoints"
+if [ -n "${SKIP+set}" ]; then
+    # No need to do anything
+    echo "Skipping sync"
+else
+    pip install -r requirements.txt
+    aws s3 sync "s3://yourheadisthere/data_derived/$DATASET" "/data/data_derived/$DATASET"
+    aws s3 sync "s3://yourheadisthere/checkpoints" "/data/checkpoints"
+fi
 
 # Not sure if actually necessary.
 chown -R nobody:nogroup /data
