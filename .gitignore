@@ -152,7 +152,14 @@ notebooks/results
 wandb-metadata.json
 motion-net.filter.html
 
+paper
+html
 html/*
 html/images
 
 *.npy
+
+revision/.netlify
+notebooks/hidef
+replies.md
+notebooks/Generate high-def pairs.ipynb
