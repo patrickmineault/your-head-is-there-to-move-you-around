@@ -1,8 +1,10 @@
 import sys
 
 sys.path.append("../")
-sys.path.append("../../CPC/dpc")
-sys.path.append("../../CPC/backbone")
+import paths
+sys.path.append(paths.CPC_DPC)
+sys.path.append(paths.CPC_BACKBONE)
+
 
 from tqdm import tqdm
 

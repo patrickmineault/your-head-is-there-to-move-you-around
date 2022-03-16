@@ -24,8 +24,8 @@
 import sys
 sys.path.append('../')
 from paths import *
-sys.path.append("../../CPC/dpc")
-sys.path.append("../../CPC/backbone")
+sys.path.append(CPC_DPC)
+sys.path.append(CPC_BACKBONE)
 
 from python_dict_wrapper import wrap
 

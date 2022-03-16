@@ -1,3 +1,5 @@
 RAW_DATA = "/mnt/e/data_derived/"
 DERIVED_DATA = "/mnt/e/data_derived/"
 CHECKPOINTS = "/mnt/d/Documents/dorsalnet/pretrained/"
+CPC_DPC = "/mnt/e/Documents/ventral-dorsal-model/Models/CPC/dpc"
+CPC_BACKBONE = "/mnt/e/Documents/ventral-dorsal-model/Models/CPC/backbone"
