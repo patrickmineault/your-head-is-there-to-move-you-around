@@ -22,6 +22,8 @@ cd yhit
 
 Then, in this environment, `pip install -r requirements.txt`. You may use the Dockerfile if you prefer.
 
+To use CPC models, [clone this repo](https://github.com/ShahabBakht/ventral-dorsal-model) and modify the paths in `paths.py`.
+
 ## Electrophysiology datasets
 
 Data licenses do not allow us to openly redistribute derived datasets, hence the end-user will need to download datasets and preprocess them manually as shown below. 

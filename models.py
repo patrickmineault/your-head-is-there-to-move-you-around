@@ -26,6 +26,7 @@ from torchvision.models.resnet import resnet18
 from torchvision.models.vgg import vgg19
 from torchvision.models.video import r3d_18, mc3_18, r2plus1d_18
 
+import paths
 
 class Passthrough(nn.Module):
     def __init__(self):
@@ -710,8 +711,8 @@ def get_feature_model(args):
 
         metadata = {"sz": 112, "threed": True}
     elif args.features.startswith("cpc"):
-        sys.path.append("../CPC/dpc")
-        sys.path.append("../CPC/backbone")
+        sys.path.append(paths.CPC_DPC)
+        sys.path.append(paths.CPC_BACKBONE)
         from model_3d import DPC_RNN
 
         checkpoints = [
@@ -721,8 +722,8 @@ def get_feature_model(args):
         ]
         network_names = [
             "monkeynet",
-            "monkeynet",
-            "visualnet",
+            "monkeynet_historical",
+            "monkeynet_p1",
         ]
         ckpt_id = int(args.features[-2:])
         ckpt_path = checkpoints[ckpt_id]
