@@ -6,7 +6,12 @@ This repo contains information necessary to run the code in "Your head is there 
 
 ## Python dependencies
 
-Python 3.8. In a new conda environment, `pip install -r requirements.txt`. You may use the Dockerfile if you prefer.
+Python 3.8. Create a new conda environment like so:
+
+```conda create --name yh python=3.8
+conda activate yh```
+
+In this environment, `pip install -r requirements.txt`. You may use the Dockerfile if you prefer.
 
 ## Electrophysiology datasets
 
