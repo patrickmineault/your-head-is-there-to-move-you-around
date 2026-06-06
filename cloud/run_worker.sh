@@ -43,7 +43,8 @@ mkdir -p "$DATA_ROOT" "$CKPT_ROOT" "$CACHE_ROOT"
 if [ ! -d "$DATA_ROOT/$FOLDER" ]; then
     echo ">>> fetching $FOLDER from GCS"
     gsutil -q cp "$BUCKET/data_derived/$FOLDER.zip" "/tmp/$FOLDER.zip"
-    unzip -q -o "/tmp/$FOLDER.zip" -d "$DATA_ROOT"
+    # use python zipfile to avoid depending on a system `unzip`
+    "${PYTHON:-python3}" -c "import zipfile; zipfile.ZipFile('/tmp/$FOLDER.zip').extractall('$DATA_ROOT')"
     rm -f "/tmp/$FOLDER.zip"
 fi
 for ck in vjepa2_1_vitl_dist_vitG_384.pt midway-bdd-vit-b-ep300.pth; do
@@ -62,12 +63,12 @@ COMMON=(--exp_name "$EXP_NAME" --dataset "$DATASET" --features "$FEATURES"
         --vjepa_pad_t "$VJEPA_PAD_T")
 
 if [ "$MODE" = "extract" ]; then
-    python train_convex.py "${COMMON[@]}" --subset 0 --batch_size 8 --extract_only
+    "${PYTHON:-python3}" train_convex.py "${COMMON[@]}" --subset 0 --batch_size 8 --extract_only
     echo ">>> pushing feature cache to GCS"
     gsutil -m -q cp "$CACHE_ROOT"/* "$BUCKET/features/${FEATURES}_${DATASET}/"
 else
     export WANDB_MODE="${WANDB_MODE:-offline}"
-    python train_convex.py "${COMMON[@]}" --subset "$SUBSET" --batch_size 8 --save_predictions
+    "${PYTHON:-python3}" train_convex.py "${COMMON[@]}" --subset "$SUBSET" --batch_size 8 --save_predictions
     echo ">>> pushing results to GCS"
     gsutil -m -q cp -r wandb "$BUCKET/results/${FEATURES}_${DATASET}/subset${SUBSET}/" 2>/dev/null || true
 fi

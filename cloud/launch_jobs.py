@@ -132,17 +132,24 @@ def run_batch(units, a):
         "REPO_URL": a.repo_url, "REPO_REF": a.repo_ref,
     }
     if a.image:
+        # Batch's default host needs GPU drivers installed for a container runnable.
         runnable = {"container": {"imageUri": a.image}, "environment": {"variables": env_vars}}
         instance_policy = {"machineType": a.machine_type,
                            "accelerators": [{"type": a.gpu_type, "count": 1}]}
+        install_drivers = True
     else:
-        # No Docker: pull bootstrap.sh from the repo and run it on a DL VM image.
+        # No Docker: pull bootstrap.sh from the repo and run it on a DL VM image,
+        # which already has CUDA + GPU drivers (so don't reinstall them).
         bootstrap_url = _raw_url(a.repo_url, a.repo_ref, "cloud/bootstrap.sh")
         script = f'curl -fsSL "{bootstrap_url}" -o /tmp/bootstrap.sh && bash /tmp/bootstrap.sh'
         runnable = {"script": {"text": script}, "environment": {"variables": env_vars}}
         instance_policy = {"machineType": a.machine_type,
                            "accelerators": [{"type": a.gpu_type, "count": 1}],
                            "bootDisk": {"image": a.boot_image, "sizeGb": 200}}
+        install_drivers = False
+
+    if a.spot:
+        instance_policy["provisioningModel"] = "SPOT"
 
     job = {
         "taskGroups": [{
@@ -154,7 +161,7 @@ def run_batch(units, a):
                 "runnables": [runnable],
             },
         }],
-        "allocationPolicy": {"instances": [{"installGpuDrivers": True, "policy": instance_policy}]},
+        "allocationPolicy": {"instances": [{"installGpuDrivers": install_drivers, "policy": instance_policy}]},
         "logsPolicy": {"destination": "CLOUD_LOGGING"},
     }
     job_file = local_manifest.replace(".tsv", ".json")
@@ -212,10 +219,13 @@ def main():
     ap.add_argument("--repo-ref", dest="repo_ref", default="vjepa-midway-extension",
                     help="Branch/tag/commit of the repo to clone.")
     ap.add_argument("--boot-image", dest="boot_image",
-                    default="projects/deeplearning-platform-release/global/images/family/common-cu121-py310",
-                    help="Boot-disk image for the no-Docker script runnable (has CUDA+python).")
+                    default="projects/deeplearning-platform-release/global/images/family/common-cu129-ubuntu-2204-nvidia-580",
+                    help="Boot-disk image for the no-Docker script runnable (has CUDA+python+driver).")
     ap.add_argument("--machine_type", default="g2-standard-8")
     ap.add_argument("--gpu_type", default="nvidia-l4")
+    ap.add_argument("--spot", action="store_true",
+                    help="Use Spot (preemptible) VMs -- cheaper and often the only "
+                         "GPU capacity available; Batch retries preempted tasks.")
     ap.add_argument("--region", default="us-central1")
     ap.add_argument("--dry-run", dest="dry_run", action="store_true")
     a = ap.parse_args()
