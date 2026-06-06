@@ -9,10 +9,10 @@ import sklearn.linear_model
 from training import compute_corr
 
 
-def compute_ridge_estimate(X, Y, X_report, Y_report, splits):
+def compute_ridge_estimate(X, Y, X_report, Y_report, splits, device="cuda"):
     kfold = splits.max() + 1
-    Y = Y.to(device="cuda")
-    X = X.to(device="cuda")
+    Y = Y.to(device=device)
+    X = X.to(device=device)
 
     print(X.std(axis=0)[:10])
 
@@ -29,7 +29,7 @@ def compute_ridge_estimate(X, Y, X_report, Y_report, splits):
         C = X_train.T.matmul(X_train)
 
         for j, lambda_ in enumerate(lambdas):
-            H = C + lambda_ * torch.eye(X_train.shape[1], device="cuda")
+            H = C + lambda_ * torch.eye(X_train.shape[1], device=device)
             w = torch.inverse(H).matmul(X_train.T.matmul(Y_train))
             # w = torch.linalg.solve(H, X_train.T @ Y_train)
             # w, _ = torch.solve(X_train.T @ Y_train, H)
@@ -50,19 +50,19 @@ def compute_ridge_estimate(X, Y, X_report, Y_report, splits):
     # is an array already.
     best_lambdas = np.array(best_lambdas)
 
-    X_report = X_report.to(device="cuda")
-    Y_report = Y_report.to(device="cuda")
+    X_report = X_report.to(device=device)
+    Y_report = Y_report.to(device=device)
 
     best_lambda_vals = np.unique(best_lambdas)
 
-    Y_preds = torch.zeros(Y_report.shape, device="cuda")
+    Y_preds = torch.zeros(Y_report.shape, device=device)
 
     best_W = np.zeros((X.shape[1], Y_report.shape[1]))
-    Y = Y.to(device="cuda")
+    Y = Y.to(device=device)
 
     C = X.T.matmul(X)
     for lambda_ in best_lambda_vals:
-        H = C + lambda_ * torch.eye(X.shape[1], device="cuda")
+        H = C + lambda_ * torch.eye(X.shape[1], device=device)
         w = torch.inverse(H).matmul(X.T.matmul(Y))
         # This would be ideal, but it's not in torch stable yet.
         # w = torch.linalg.solve(H, X.T @ Y)
@@ -99,20 +99,22 @@ def compute_ridge_estimate(X, Y, X_report, Y_report, splits):
     return results, weights
 
 
-def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
+def compute_boosting_estimate(X, Y, X_report, Y_report, splits, device="cuda"):
     alpha = 0.1
     max_iter = 100
     kfold = splits.max() + 1
 
-    t = torch.cuda.get_device_properties(0).total_memory
-    
-    nums = X.numel() * 4 * 2.5
-    print(t, nums)
-    if t > X.numel() * nums:
-        # CUDA is much faster, but has less memory.
-        target = "cuda"
+    if device == "cuda" and torch.cuda.is_available():
+        t = torch.cuda.get_device_properties(0).total_memory
+        nums = X.numel() * 4 * 2.5
+        print(t, nums)
+        if t > X.numel() * nums:
+            # CUDA is much faster, but has less memory.
+            target = "cuda"
+        else:
+            target = "cpu"
     else:
-        target = "cpu"
+        target = device
 
     # Store predictions in main memory to prevent out-of-memory errors.
     Y_preds = torch.zeros(Y.shape[0], Y.shape[1], max_iter, dtype=torch.float32)
@@ -214,7 +216,7 @@ def compute_boosting_estimate(X, Y, X_report, Y_report, splits):
     return results, weights
 
 
-def compute_l1_estimate(X, Y, X_report, Y_report, splits):
+def compute_l1_estimate(X, Y, X_report, Y_report, splits, device="cuda"):
     if Y.shape[1] > 1:
         raise NotImplementedError("Y.shape[1] > 1 not implemented")
 
@@ -242,8 +244,8 @@ def compute_l1_estimate(X, Y, X_report, Y_report, splits):
     r2_report = 1 - var_after / var_baseline
 
     corrs_report = compute_corr(
-        torch.tensor(Y_report, dtype=torch.float32, device="cuda"),
-        torch.tensor(Y_preds, dtype=torch.float32, device="cuda"),
+        torch.tensor(Y_report, dtype=torch.float32, device=device),
+        torch.tensor(Y_preds, dtype=torch.float32, device=device),
     )
 
     results = {

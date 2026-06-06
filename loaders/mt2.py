@@ -92,8 +92,8 @@ class MT2(torch.utils.data.Dataset):
             assert spikes.ndim == 1
             cellid = cell.split('/')[-1][:6]
             framecount = len(f.get_node('/rawStims'))
-            traintune_range = f.get_node('/ranges/crange')[:].ravel().astype(np.int) - 1
-            report_range = f.get_node('/ranges/vrange')[:].ravel().astype(np.int) - 1
+            traintune_range = f.get_node('/ranges/crange')[:].ravel().astype(int) - 1
+            report_range = f.get_node('/ranges/vrange')[:].ravel().astype(int) - 1
             f.close()
 
             info = {

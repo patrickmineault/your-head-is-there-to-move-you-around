@@ -83,8 +83,8 @@ class Downsampler(nn.Module):
             ntau = X.shape[2]
             ny = 1
 
-            # 6 and 12 are one-offs for FastSlow_Fast
-            if X.shape[2] not in (5, 6, 10, 12, 20, 40, 80):
+            # 6 and 12 are one-offs for FastSlow_Fast; 8 for V-JEPA with --vjepa_pad_t 16
+            if X.shape[2] not in (5, 6, 8, 10, 12, 20, 40, 80):
                 raise NotImplementedError("X.shape[2] must be 10 x a power of 2")
 
         # assert X.shape[2] in (10, 20, 40, 80, 200), "X.shape[2] must be 10 x a power of 2"
@@ -147,7 +147,11 @@ class Averager(nn.Module):
             X = data
             ntau = X.shape[2]
             ny = 1
+            # Averager groups time into nt=4, so T must be divisible-friendly.
+            # V-JEPA over 10 frames gives T'=5 (not usable here) -> use --vjepa_pad_t 16
+            # for T'=8, or the `downsample` aggregator (which selects exactly nt points).
             assert X.shape[2] in (
+                8,
                 10,
                 20,
                 40,
@@ -202,7 +206,7 @@ def resize(movie, width):
     return data
 
 
-def tune_batch_size(model, loader, metadata):
+def tune_batch_size(model, loader, metadata, device="cuda"):
     """This doesn't help _that_ much, about 20%."""
     debug("Tuning batch size")
     # Tune the batch size to maximize throughput.
@@ -234,7 +238,7 @@ def tune_batch_size(model, loader, metadata):
             X = torch.tensor(np.stack(Xs, axis=0))
             Y = torch.tensor(np.stack(Ys, axis=0))
 
-            X, Y = X.to(device="cuda"), Y.to(device="cuda")
+            X, Y = X.to(device=device), Y.to(device=device)
 
             X = resize(X, metadata["sz"])
 
@@ -280,7 +284,9 @@ def preprocess_data(loader, model, aggregator, activations, metadata, args):
             else:
                 X, _, _, Y = loaded
             progress_bar.update(1)
-            X, Y = X.to(device="cuda"), Y.to(device="cuda")
+            X, Y = X.to(device=getattr(args, "device", "cuda")), Y.to(
+                device=getattr(args, "device", "cuda")
+            )
 
             with torch.no_grad():
                 X = resize(X, metadata["sz"])
@@ -496,6 +502,7 @@ def get_dataset(args, fold):
 
 def get_feature_model(args):
     activations = collections.OrderedDict()
+    custom_hooks = False  # transformer branches register their own grid-reshaping hooks
 
     def hook(name):
         def hook_fn(m, i, o):
@@ -750,11 +757,33 @@ def get_feature_model(args):
             ]
         )
         metadata = {"sz": 112, "threed": True}
+    elif args.features == "vjepa2_1_vitl":
+        from modelzoo import transformer_models as tm
+
+        ckpt_path = os.path.join(args.ckpt_root, paths.VJEPA2_1_VITL_CKPT)
+        layer_idxs = [0, 4, 8, 12, 16, 20, 23]  # 7 of 24 blocks
+        target_t = args.vjepa_pad_t if args.vjepa_pad_t > 0 else None
+        model, layers, metadata = tm.build_vjepa2_1_vitl(
+            ckpt_path, activations, layer_idxs,
+            input_adapt=args.input_adapt, target_t=target_t, img_size=384,
+        )
+        custom_hooks = True
+    elif args.features == "midway_bdd_vitb":
+        from modelzoo import transformer_models as tm
+
+        ckpt_path = os.path.join(args.ckpt_root, paths.MIDWAY_BDD_VITB_CKPT)
+        layer_idxs = [1, 3, 5, 7, 9, 11]  # 6 of 12 blocks
+        model, layers, metadata = tm.build_midway_vitb(
+            ckpt_path, activations, layer_idxs,
+            input_adapt=args.input_adapt, img_size=224,
+        )
+        custom_hooks = True
     else:
         raise NotImplementedError("Model not implemented yet")
 
-    for key, layer in layers.items():
-        layer.register_forward_hook(hook(key))
+    if not custom_hooks:
+        for key, layer in layers.items():
+            layer.register_forward_hook(hook(key))
 
     metadata["layers"] = layers
 

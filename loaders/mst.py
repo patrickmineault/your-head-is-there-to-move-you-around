@@ -127,7 +127,7 @@ class MST(torch.utils.data.Dataset):
                     continue
 
                 if int(n / block_size) % nblocks in splits[split]:
-                    padded_idx = Xidx[start_time : end_time - 1, :].astype(np.int)
+                    padded_idx = Xidx[start_time : end_time - 1, :].astype(int)
 
                     if self.ntau > padded_idx.shape[1]:
                         # Pad.
@@ -137,7 +137,7 @@ class MST(torch.utils.data.Dataset):
                         idxrg[:lpad] = 0
                         idxrg[-lpad:] = padded_idx.shape[1] - 1
 
-                        padded_idx = padded_idx[:, idxrg.astype(np.int)]
+                        padded_idx = padded_idx[:, idxrg.astype(int)]
 
                     sequence.append(
                         {

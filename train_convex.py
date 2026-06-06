@@ -23,7 +23,10 @@ from convex_models import (
     compute_l1_estimate,
 )
 
-from research_code.cka_step4 import cka
+try:
+    from research_code.cka_step4 import cka
+except Exception:  # research_code is an optional diagnostic dependency
+    cka = None
 
 import torch
 
@@ -87,7 +90,7 @@ def compute_layer(
 
     # Use k-fold cross-validation
     kfold = 5
-    splits = (np.arange(X.shape[0]) / 100).astype(np.int) % kfold
+    splits = (np.arange(X.shape[0]) / 100).astype(int) % kfold
 
     m = X.mean(axis=0, keepdims=True)
     s = X.std(axis=0, keepdims=True) + ff
@@ -120,23 +123,30 @@ def compute_layer(
     if args.pca > -1:
         X_report = torch.matmul(X_report, V)
 
+    device = getattr(args, "device", "cuda")
     if args.method == "ridge":
-        results, weights = compute_ridge_estimate(X, Y, X_report, Y_report, splits)
+        results, weights = compute_ridge_estimate(X, Y, X_report, Y_report, splits, device=device)
     elif args.method == "boosting":
-        results, weights = compute_boosting_estimate(X, Y, X_report, Y_report, splits)
+        results, weights = compute_boosting_estimate(X, Y, X_report, Y_report, splits, device=device)
     elif args.method == "l1":
-        results, weights = compute_l1_estimate(X, Y, X_report, Y_report, splits)
+        results, weights = compute_l1_estimate(X, Y, X_report, Y_report, splits, device=device)
     else:
         raise NotImplementedError("Method not implemented")
 
-    cka_report = cka(X_report, Y_report)
+    if cka is not None:
+        try:
+            cka_report = cka(X_report, Y_report).item()
+        except Exception:
+            cka_report = float("nan")
+    else:
+        cka_report = float("nan")
 
     if not args.save_predictions:
         del weights["Y_preds"]
 
     results["feature_mean"] = m.squeeze().cpu().detach().numpy()
     results["fit_time"] = time.time() - t0
-    results["cka_report"] = cka_report.item()
+    results["cka_report"] = cka_report
     results["layer"] = args.layer
     results["subset"] = args.subset
     results["max_r"] = max_r
@@ -177,7 +187,7 @@ def check_existing(args, metadata):
 def main(args):
     print("Fitting model")
     print(args)
-    device = "cuda"
+    device = args.device
 
     try:
         os.makedirs(args.ckpt_root)
@@ -214,7 +224,7 @@ def main(args):
     feature_model.to(device=device)
 
     if args.autotune:
-        batch_size = tune_batch_size(feature_model, trainset, metadata)
+        batch_size = tune_batch_size(feature_model, trainset, metadata, device=device)
     else:
         batch_size = args.batch_size
 
@@ -225,6 +235,17 @@ def main(args):
     reportloader = torch.utils.data.DataLoader(
         reportset, batch_size=batch_size, shuffle=False, pin_memory=True
     )
+
+    if args.extract_only:
+        # Build the per-layer feature caches (a single forward pass over each
+        # loader populates all layers) and exit before regression. Used by the
+        # GPU extraction stage; the cheap per-neuron fits then read the cache.
+        args.layer = 0
+        args.layer_name = list(metadata["layers"].keys())[0]
+        preprocess_data(trainloader, feature_model, aggregator, activations, metadata, args)
+        preprocess_data(reportloader, feature_model, aggregator, activations, metadata, args)
+        print(">>> Extraction-only complete; caches written.")
+        return
 
     # Do this for every layer under the sun.
     for layer_num, layer_name in enumerate(metadata["layers"].keys()):
@@ -333,6 +354,32 @@ if __name__ == "__main__":
         default=112,
         type=int,
         help="Size of stimulus",
+    )
+    parser.add_argument(
+        "--device",
+        default="cuda",
+        type=str,
+        help="Torch device for feature extraction and regression (cuda, cpu, mps)",
+    )
+    parser.add_argument(
+        "--input_adapt",
+        default="resize",
+        choices=["resize", "pad"],
+        help="How transformer models map a clip to the encoder's native size: "
+        "interpolate (resize) or mirror/reflect-pad in x/y (pad).",
+    )
+    parser.add_argument(
+        "--vjepa_pad_t",
+        default=0,
+        type=int,
+        help="If >0, mirror-pad the temporal dim of V-JEPA clips up to this many "
+        "frames before the encoder (e.g. 16). 0 = leave as-is.",
+    )
+    parser.add_argument(
+        "--extract_only",
+        default=False,
+        action="store_true",
+        help="Only build feature caches (one forward pass) then exit; skip regression.",
     )
 
     args = parser.parse_args()

@@ -1,0 +1,17 @@
+# Modern stack for the V-JEPA 2.1 + Midway ViT feature extractors and the
+# (torch-version-agnostic) ridge-regression neuron fitting. Separate from the
+# repo's legacy requirements.txt (torch 1.7 / slowfast / detectron2), which the
+# transformer models are incompatible with.
+torch>=2.2
+torchvision>=0.17
+timm>=0.9          # V-JEPA imports timm.models.layers.drop_path
+einops>=0.7        # V-JEPA patch_embed
+numpy>=1.24
+scipy
+scikit-learn
+tables             # HDF5 feature cache (pytables)
+h5py
+pandas
+tqdm
+wandb
+GitPython          # preprocess_data tags caches with the git sha
