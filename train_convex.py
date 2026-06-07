@@ -152,10 +152,13 @@ def compute_layer(
     results["max_r"] = max_r
 
     if not args.no_wandb:
+        # Go straight to offline when requested (e.g. WANDB_MODE=offline on cloud
+        # workers with no API key); otherwise try online and fall back to offline.
+        offline = os.environ.get("WANDB_MODE", "").lower() in ("offline", "dryrun")
         try:
-            save_to_wandb(results, weights, args, offline=False)
-        except wandb.errors.error.UsageError:
-            print(">>> Could not save to cloud, using offline save this once.")
+            save_to_wandb(results, weights, args, offline=offline)
+        except Exception as e:  # wandb version/login differences -> offline pkl
+            print(f">>> wandb online save failed ({e}); saving offline.")
             save_to_wandb(results, weights, args, offline=True)
     else:
         print(results)
