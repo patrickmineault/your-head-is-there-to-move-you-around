@@ -219,8 +219,9 @@ def main():
     ap.add_argument("--repo-ref", dest="repo_ref", default="vjepa-midway-extension",
                     help="Branch/tag/commit of the repo to clone.")
     ap.add_argument("--boot-image", dest="boot_image",
-                    default="projects/deeplearning-platform-release/global/images/family/common-cu129-ubuntu-2204-nvidia-580",
-                    help="Boot-disk image for the no-Docker script runnable (has CUDA+python+driver).")
+                    default="projects/deeplearning-platform-release/global/images/family/pytorch-2-9-cu129-ubuntu-2204-nvidia-580",
+                    help="Boot-disk image for the no-Docker script runnable (PyTorch DLVM: "
+                         "conda+torch+pip+CUDA+driver preinstalled at /opt/conda).")
     ap.add_argument("--machine_type", default="g2-standard-8")
     ap.add_argument("--gpu_type", default="nvidia-l4")
     ap.add_argument("--spot", action="store_true",

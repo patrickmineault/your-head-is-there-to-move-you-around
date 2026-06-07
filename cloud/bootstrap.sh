@@ -40,9 +40,11 @@ for cand in /opt/conda/bin/python3 "$(command -v python3 2>/dev/null)" /usr/bin/
     fi
 done
 if [ -z "$PY" ]; then
-    echo "no python with pip found; trying ensurepip on python3"
+    echo "no python with pip found; installing python3-pip via apt"
+    (apt-get update -qq && apt-get install -y -qq python3-pip) \
+        || (sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip) || true
     PY="$(command -v python3 || echo /usr/bin/python3)"
-    "$PY" -m ensurepip --upgrade || true
+    "$PY" -m ensurepip --upgrade 2>/dev/null || true
 fi
 export PATH="$(dirname "$PY"):$PATH"
 export PYTHON="$PY"
