@@ -47,9 +47,12 @@ if [ ! -d "$DATA_ROOT/$FOLDER" ]; then
     "${PYTHON:-python3}" -c "import zipfile; zipfile.ZipFile('/tmp/$FOLDER.zip').extractall('$DATA_ROOT')"
     rm -f "/tmp/$FOLDER.zip"
 fi
-for ck in vjepa2_1_vitl_dist_vitG_384.pt midway-bdd-vit-b-ep300.pth; do
-    [ -f "$CKPT_ROOT/$ck" ] || gsutil -q cp "$BUCKET/checkpoints/$ck" "$CKPT_ROOT/"
-done
+case "$FEATURES" in
+    vjepa2_1_vitl)   ck=vjepa2_1_vitl_dist_vitG_384.pt ;;
+    midway_bdd_vitb) ck=midway-bdd-vit-b-ep300.pth ;;
+    *) ck="" ;;
+esac
+[ -n "$ck" ] && [ ! -f "$CKPT_ROOT/$ck" ] && gsutil -q cp "$BUCKET/checkpoints/$ck" "$CKPT_ROOT/"
 
 # Pull any existing feature cache for this (dataset, model) so fit jobs reuse it.
 gsutil -m -q cp "$BUCKET/features/${FEATURES}_${DATASET}/*" "$CACHE_ROOT/" 2>/dev/null || true

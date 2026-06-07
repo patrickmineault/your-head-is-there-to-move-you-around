@@ -53,6 +53,20 @@ echo "using python: $PY ($("$PY" --version 2>&1))"
 # 4. python deps (no-op if already satisfied).
 "$PY" -m pip install -q -r repo/cloud/requirements-modern.txt
 
+# 4b. ensure gsutil is on PATH (run_worker uses it for GCS); locate or install.
+if ! command -v gsutil >/dev/null 2>&1; then
+    for d in /usr/lib/google-cloud-sdk/bin /snap/google-cloud-cli/current/bin \
+             /opt/google-cloud-sdk/bin /usr/local/google-cloud-sdk/bin; do
+        [ -x "$d/gsutil" ] && export PATH="$d:$PATH" && break
+    done
+fi
+if ! command -v gsutil >/dev/null 2>&1; then
+    echo "installing google-cloud-sdk for gsutil"
+    curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --install-dir=/opt >/dev/null 2>&1
+    export PATH="/opt/google-cloud-sdk/bin:$PATH"
+fi
+echo "using gsutil: $(command -v gsutil || echo MISSING)"
+
 # 5. run the unit of work (reads MODE/DATASET/... or MANIFEST_GCS + BATCH_TASK_INDEX).
 cd repo
 exec bash cloud/run_worker.sh

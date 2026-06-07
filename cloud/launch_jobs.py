@@ -138,10 +138,13 @@ def run_batch(units, a):
                            "accelerators": [{"type": a.gpu_type, "count": 1}]}
         install_drivers = True
     else:
-        # No Docker: pull bootstrap.sh from the repo and run it on a DL VM image,
-        # which already has CUDA + GPU drivers (so don't reinstall them).
-        bootstrap_url = _raw_url(a.repo_url, a.repo_ref, "cloud/bootstrap.sh")
-        script = f'curl -fsSL "{bootstrap_url}" -o /tmp/bootstrap.sh && bash /tmp/bootstrap.sh'
+        # No Docker: git-clone the repo (always fresh branch HEAD -- avoids the
+        # raw.githubusercontent CDN cache) and run its bootstrap on a CUDA DL VM image.
+        script = (
+            "set -e; mkdir -p /opt/motion-model; "
+            f"[ -d /opt/motion-model/repo ] || git clone --depth 1 --branch {a.repo_ref} {a.repo_url} /opt/motion-model/repo; "
+            "WORK=/opt/motion-model bash /opt/motion-model/repo/cloud/bootstrap.sh"
+        )
         runnable = {"script": {"text": script}, "environment": {"variables": env_vars}}
         instance_policy = {"machineType": a.machine_type,
                            "accelerators": [{"type": a.gpu_type, "count": 1}],
