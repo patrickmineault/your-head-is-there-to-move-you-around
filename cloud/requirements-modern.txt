@@ -12,6 +12,8 @@ scikit-learn
 tables             # HDF5 feature cache (pytables)
 h5py
 pandas
+matplotlib         # imported at top of loaders/{pvc1,pvc4,mst}.py
+requests           # imported by loaders/mst.py
 tqdm
 wandb
 GitPython          # preprocess_data tags caches with the git sha
