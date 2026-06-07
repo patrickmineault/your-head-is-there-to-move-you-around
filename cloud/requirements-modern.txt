@@ -11,6 +11,8 @@ scipy
 scikit-learn
 tables             # HDF5 feature cache (pytables)
 h5py
+omegaconf          # Midway checkpoint pickles an OmegaConf config under 'args'
+hydra-core
 pandas
 matplotlib         # imported at top of loaders/{pvc1,pvc4,mst}.py
 requests           # imported by loaders/mst.py
