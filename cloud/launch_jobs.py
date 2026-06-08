@@ -47,18 +47,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 
 
-def build_manifest(stage, datasets, models, max_cells_override):
+def build_manifest(stage, datasets, models, max_cells_override, loop):
     units = []
     if stage in ("extract", "both"):
         for ds in datasets:
             for mdl in models:
                 units.append(("extract", ds, mdl, 0))
     if stage in ("fit", "both"):
-        for ds in datasets:
-            n = DATASETS[ds] if max_cells_override is None else max_cells_override
-            for mdl in models:
-                for s in range(n + 1):
-                    units.append(("fit", ds, mdl, s))
+        if loop:
+            # one task per (dataset, model): the worker loops all neurons, amortizing
+            # VM provision / deps install / data pull across them.
+            for ds in datasets:
+                for mdl in models:
+                    units.append(("loop", ds, mdl, "-"))
+        else:
+            for ds in datasets:
+                n = DATASETS[ds] if max_cells_override is None else max_cells_override
+                for mdl in models:
+                    for s in range(n + 1):
+                        units.append(("fit", ds, mdl, s))
     return units
 
 
@@ -82,19 +89,28 @@ def local_cmd(unit, a):
 
 def run_local(units, a):
     """Run units through a bounded thread pool (cap = a.max_parallel). Extraction
-    units are run to completion before fit units (a fit needs its cache)."""
+    units run before fit units. A `loop` unit expands to all the dataset's neurons,
+    run sequentially within its pooled thread."""
     extracts = [u for u in units if u[0] == "extract"]
-    fits = [u for u in units if u[0] == "fit"]
+    fits = [u for u in units if u[0] in ("fit", "loop")]
     env = {**os.environ, "KMP_DUPLICATE_LIB_OK": "TRUE"}
 
     def run_one(unit):
-        cmd = local_cmd(unit, a)
-        tag = ":".join(map(str, unit))
-        if a.dry_run:
-            print("DRY", " ".join(cmd))
-            return tag, 0
-        p = subprocess.run(cmd, cwd=REPO, env=env)
-        return tag, p.returncode
+        mode, ds, mdl, subset = unit
+        if mode == "loop":
+            n = DATASETS[ds] if a.max_cells is None else a.max_cells
+            subsets = list(range(n + 1))
+        else:
+            subsets = [subset]
+        rcs = []
+        for s in subsets:
+            cmd = local_cmd((("fit" if mode == "loop" else mode), ds, mdl, s), a)
+            if a.dry_run:
+                print("DRY", " ".join(cmd))
+                rcs.append(0)
+                continue
+            rcs.append(subprocess.run(cmd, cwd=REPO, env=env).returncode)
+        return f"{mode}:{ds}:{mdl}", (max(rcs) if rcs else 0)
 
     for phase, group in (("extract", extracts), ("fit", fits)):
         if not group:
@@ -196,6 +212,9 @@ def main():
     ap.add_argument("--models", nargs="+", default=MODELS, choices=MODELS)
     ap.add_argument("--max-cells", dest="max_cells", type=int, default=None,
                     help="Override neuron count per dataset (for quick tests).")
+    ap.add_argument("--per-neuron", dest="loop", action="store_false", default=True,
+                    help="One task per neuron (default: one task per (dataset, model) "
+                         "that loops all neurons, amortizing setup/data-pull).")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--input_adapt", default="resize", choices=["resize", "pad"])
     # V-JEPA: mirror-pad 10 -> 16 frames so T'=8 is divisible by the aggregator's
@@ -237,7 +256,7 @@ def main():
     if a.max_parallel > 8:
         sys.exit("refusing --max-parallel > 8 (you said you have < 8 GPU VMs)")
 
-    units = build_manifest(a.stage, a.datasets, a.models, a.max_cells)
+    units = build_manifest(a.stage, a.datasets, a.models, a.max_cells, a.loop)
     print(f"{len(units)} work units across {len(a.datasets)} datasets x {len(a.models)} models")
     (run_batch if a.backend == "batch" else run_local)(units, a)
 
