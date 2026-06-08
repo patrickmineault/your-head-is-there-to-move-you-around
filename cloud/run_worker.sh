@@ -20,6 +20,7 @@ INPUT_ADAPT="${INPUT_ADAPT:-resize}"
 EXP_NAME="${EXP_NAME:-vjepa_midway_fit}"
 AGGREGATOR="${AGGREGATOR:-average}"      # global token pool -> ~0.7GB cache/cell
 VJEPA_PAD_T="${VJEPA_PAD_T:-16}"         # 10 -> 16 frames so T'=8 (ignored by Midway)
+BATCH_SIZE="${BATCH_SIZE:-16}"           # fp16 + 256px V-JEPA -> 16 fits an L4 comfortably
 
 # neuron count per dataset (max subset index, inclusive) -- matches run_remote.sh
 declare -A MAXCELLS=(
@@ -66,15 +67,17 @@ COMMON=(--exp_name "$EXP_NAME" --dataset "$DATASET" --features "$FEATURES"
         --resize 112 --device "$DEVICE" --input_adapt "$INPUT_ADAPT"
         --vjepa_pad_t "$VJEPA_PAD_T")
 
+# Online W&B if a key is present (injected from Secret Manager by Batch), else offline.
+if [ -n "${WANDB_API_KEY:-}" ]; then export WANDB_MODE=online; else export WANDB_MODE=offline; fi
+
 run_fit() {  # $1 = subset; skips if already in GCS, clears per-cell cache after
     local s="$1"
     local rpath="$BUCKET/results/${FEATURES}_${DATASET}/subset${s}"
     if gsutil -q ls "$rpath/**/results.pkl" >/dev/null 2>&1; then
         echo ">>> subset $s already done, skipping"; return 0
     fi
-    export WANDB_MODE="${WANDB_MODE:-offline}"
     rm -rf wandb
-    "${PYTHON:-python3}" train_convex.py "${COMMON[@]}" --subset "$s" --batch_size 8 --save_predictions
+    "${PYTHON:-python3}" train_convex.py "${COMMON[@]}" --subset "$s" --batch_size "$BATCH_SIZE" --save_predictions
     gsutil -m -q cp -r wandb "$rpath/" 2>/dev/null || true
     # each cell's features differ (per-cell stimuli) -> drop its cache to bound disk
     rm -f "$CACHE_ROOT/${FEATURES}_"*"_${DATASET}_${s}_"*.h5 2>/dev/null || true
@@ -83,7 +86,7 @@ run_fit() {  # $1 = subset; skips if already in GCS, clears per-cell cache after
 
 case "$MODE" in
     extract)
-        "${PYTHON:-python3}" train_convex.py "${COMMON[@]}" --subset 0 --batch_size 8 --extract_only
+        "${PYTHON:-python3}" train_convex.py "${COMMON[@]}" --subset 0 --batch_size "$BATCH_SIZE" --extract_only
         gsutil -m -q cp "$CACHE_ROOT"/* "$BUCKET/features/${FEATURES}_${DATASET}/" ;;
     loop)
         max="${MAXCELLS[$DATASET]}"

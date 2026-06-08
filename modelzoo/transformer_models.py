@@ -136,7 +136,9 @@ def make_grid_hook(name, activations, wrapper):
             n_prefix = x.shape[1] - spatial          # CLS (+ registers)
             x = x[:, n_prefix:, :]                    # keep patch tokens only
             x = x.reshape(B, Hp, Wp, D).permute(0, 3, 1, 2).contiguous()
-        activations[name] = x
+        # fp16 autocast speeds the ViT forward; upcast captured features to fp32 so
+        # the downstream ridge (matrix inverse) stays numerically stable.
+        activations[name] = x.float()
 
     return hook
 
@@ -163,7 +165,8 @@ class VJEPA2Wrapper(nn.Module):
         _, _, T, H, W = x.shape
         self.grid_t = T // self.tubelet_size
         self.grid_hw = (H // self.patch_size, W // self.patch_size)
-        return self.encoder(x)
+        with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=x.is_cuda):
+            return self.encoder(x)
 
 
 class MidwayWrapper(nn.Module):
@@ -184,7 +187,8 @@ class MidwayWrapper(nn.Module):
         _, _, H, W = x.shape
         self.grid_hw = (H // self.patch_size, W // self.patch_size)
         # feature_levels=[] -> encoder returns (cls, []); hooks capture the blocks.
-        return self.encoder(x, feature_levels=[])
+        with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=x.is_cuda):
+            return self.encoder(x, feature_levels=[])
 
 
 # --------------------------------------------------------------------------- #
@@ -255,9 +259,13 @@ def load_midway_vitb(ckpt_path, img_size=224):
 # Public entry points used by models.get_feature_model.
 # --------------------------------------------------------------------------- #
 def build_vjepa2_1_vitl(ckpt_path, activations, layer_idxs, input_adapt="resize",
-                        target_t=None, img_size=384):
+                        target_t=None, img_size=384, infer_size=None):
+    # Build the encoder at its native 384 (RoPE base grid 24); feed `infer_size`
+    # (e.g. 256 -> 16x16 tokens, ~2x fewer) and let interpolate_rope adapt. RoPE has
+    # no learned positional params, so a smaller inference resolution is cheap + valid.
     encoder = load_vjepa2_1_vitl(ckpt_path, img_size=img_size)
-    adapter = InputAdapter(size=img_size, mode=input_adapt, target_t=target_t)
+    sz = infer_size or img_size
+    adapter = InputAdapter(size=sz, mode=input_adapt, target_t=target_t)
     wrapper = VJEPA2Wrapper(encoder, adapter, patch_size=16, tubelet_size=2)
     layers = collections.OrderedDict(
         (f"layer{i:02}", encoder.blocks[i]) for i in layer_idxs

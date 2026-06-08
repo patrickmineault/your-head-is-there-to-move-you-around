@@ -763,9 +763,11 @@ def get_feature_model(args):
         ckpt_path = os.path.join(args.ckpt_root, paths.VJEPA2_1_VITL_CKPT)
         layer_idxs = [0, 4, 8, 12, 16, 20, 23]  # 7 of 24 blocks
         target_t = args.vjepa_pad_t if args.vjepa_pad_t > 0 else None
+        infer_size = getattr(args, "vjepa_infer_size", 256) or 384
         model, layers, metadata = tm.build_vjepa2_1_vitl(
             ckpt_path, activations, layer_idxs,
             input_adapt=args.input_adapt, target_t=target_t, img_size=384,
+            infer_size=infer_size,
         )
         custom_hooks = True
     elif args.features == "midway_bdd_vitb":

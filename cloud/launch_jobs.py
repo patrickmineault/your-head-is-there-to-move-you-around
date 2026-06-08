@@ -147,9 +147,12 @@ def run_batch(units, a):
         "INPUT_ADAPT": a.input_adapt, "EXP_NAME": a.exp_name,
         "REPO_URL": a.repo_url, "REPO_REF": a.repo_ref,
     }
+    environment = {"variables": env_vars}
+    if a.wandb_secret:  # inject WANDB_API_KEY from Secret Manager at runtime
+        environment["secretVariables"] = {"WANDB_API_KEY": a.wandb_secret}
     if a.image:
         # Batch's default host needs GPU drivers installed for a container runnable.
-        runnable = {"container": {"imageUri": a.image}, "environment": {"variables": env_vars}}
+        runnable = {"container": {"imageUri": a.image}, "environment": environment}
         instance_policy = {"machineType": a.machine_type,
                            "accelerators": [{"type": a.gpu_type, "count": 1}]}
         install_drivers = True
@@ -161,7 +164,7 @@ def run_batch(units, a):
             f"[ -d /opt/motion-model/repo ] || git clone --depth 1 --branch {a.repo_ref} {a.repo_url} /opt/motion-model/repo; "
             "WORK=/opt/motion-model bash /opt/motion-model/repo/cloud/bootstrap.sh"
         )
-        runnable = {"script": {"text": script}, "environment": {"variables": env_vars}}
+        runnable = {"script": {"text": script}, "environment": environment}
         instance_policy = {"machineType": a.machine_type,
                            "accelerators": [{"type": a.gpu_type, "count": 1}],
                            "bootDisk": {"image": a.boot_image, "sizeGb": 200}}
@@ -244,6 +247,10 @@ def main():
                     default="projects/deeplearning-platform-release/global/images/family/pytorch-2-9-cu129-ubuntu-2204-nvidia-580",
                     help="Boot-disk image for the no-Docker script runnable (PyTorch DLVM: "
                          "conda+torch+pip+CUDA+driver preinstalled at /opt/conda).")
+    ap.add_argument("--wandb-secret", dest="wandb_secret", default="",
+                    help="Secret Manager resource for WANDB_API_KEY, e.g. "
+                         "projects/xcorr-dev/secrets/wandb-api-key/versions/latest. "
+                         "If set, runs log online; otherwise offline+GCS.")
     ap.add_argument("--machine_type", default="g2-standard-8")
     ap.add_argument("--gpu_type", default="nvidia-l4")
     ap.add_argument("--spot", action="store_true",

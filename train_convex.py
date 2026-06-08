@@ -379,6 +379,13 @@ if __name__ == "__main__":
         "frames before the encoder (e.g. 16). 0 = leave as-is.",
     )
     parser.add_argument(
+        "--vjepa_infer_size",
+        default=256,
+        type=int,
+        help="Resolution fed to V-JEPA (native build is 384; RoPE interpolates). "
+        "256 -> 16x16 tokens (~2x fewer than 384) for ~2x faster inference.",
+    )
+    parser.add_argument(
         "--extract_only",
         default=False,
         action="store_true",
