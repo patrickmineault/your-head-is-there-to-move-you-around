@@ -21,6 +21,7 @@ EXP_NAME="${EXP_NAME:-vjepa_midway_fit}"
 AGGREGATOR="${AGGREGATOR:-average}"      # global token pool -> ~0.7GB cache/cell
 VJEPA_PAD_T="${VJEPA_PAD_T:-16}"         # 10 -> 16 frames so T'=8 (ignored by Midway)
 BATCH_SIZE="${BATCH_SIZE:-16}"           # fp16 + 256px V-JEPA -> 16 fits an L4 comfortably
+CHPROJ_DIM="${CHPROJ_DIM:-64}"           # for aggregator=downsample_chproj (C -> this)
 
 # neuron count per dataset (max subset index, inclusive) -- matches run_remote.sh
 declare -A MAXCELLS=(
@@ -65,14 +66,14 @@ COMMON=(--exp_name "$EXP_NAME" --dataset "$DATASET" --features "$FEATURES"
         --data_root "$DATA_ROOT" --ckpt_root "$CKPT_ROOT" --cache_root "$CACHE_ROOT"
         --aggregator "$AGGREGATOR" --aggregator_sz 8 --pca 500 --method ridge
         --resize 112 --device "$DEVICE" --input_adapt "$INPUT_ADAPT"
-        --vjepa_pad_t "$VJEPA_PAD_T")
+        --vjepa_pad_t "$VJEPA_PAD_T" --chproj_dim "$CHPROJ_DIM")
 
 # Online W&B if a key is present (injected from Secret Manager by Batch), else offline.
 if [ -n "${WANDB_API_KEY:-}" ]; then export WANDB_MODE=online; else export WANDB_MODE=offline; fi
 
 run_fit() {  # $1 = subset; skips if already in GCS, clears per-cell cache after
     local s="$1"
-    local rpath="$BUCKET/results/${FEATURES}_${DATASET}/subset${s}"
+    local rpath="$BUCKET/results/${EXP_NAME}/${FEATURES}_${DATASET}/subset${s}"
     if gsutil -q ls "$rpath/**/results.pkl" >/dev/null 2>&1; then
         echo ">>> subset $s already done, skipping"; return 0
     fi

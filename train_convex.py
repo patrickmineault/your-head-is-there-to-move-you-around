@@ -386,6 +386,12 @@ if __name__ == "__main__":
         "256 -> 16x16 tokens (~2x fewer than 384) for ~2x faster inference.",
     )
     parser.add_argument(
+        "--chproj_dim",
+        default=64,
+        type=int,
+        help="For aggregator=downsample_chproj: projected channel count (C -> this).",
+    )
+    parser.add_argument(
         "--extract_only",
         default=False,
         action="store_true",

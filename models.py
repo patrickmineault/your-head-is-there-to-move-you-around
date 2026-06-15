@@ -370,6 +370,39 @@ def preprocess_data(loader, model, aggregator, activations, metadata, args):
     return X, Y
 
 
+class ChannelProjDownsampler(nn.Module):
+    """Like Downsampler (keeps the sz x sz spatial grid) but first compresses the
+    channel dimension C -> c with a FIXED seeded random projection, so the cached
+    feature is c*nt*sz*sz instead of C*nt*sz*sz (e.g. 1024->64 = 16x smaller) while
+    preserving spatial layout. Channel projection commutes with the per-channel
+    spatial downsample, so we project first then reuse the standard Downsampler.
+    Per-feature standardization downstream makes the projection scale irrelevant.
+    """
+
+    def __init__(self, sz, c=64, seed=0xC0FFEE):
+        super(ChannelProjDownsampler, self).__init__()
+        self.inner = Downsampler(sz)
+        self.c = c
+        self.seed = seed
+        self._R = {}
+
+    def _proj_mat(self, C, device, dtype):
+        if C not in self._R:
+            g = torch.Generator().manual_seed(self.seed + C)
+            self._R[C] = torch.randn(C, self.c, generator=g)
+        return self._R[C].to(device=device, dtype=dtype)
+
+    def _project(self, X):  # X: (B, C, T, H, W) -> (B, c, T, H, W)
+        R = self._proj_mat(X.shape[1], X.device, X.dtype)
+        return torch.einsum("bcthw,cd->bdthw", X, R)
+
+    def forward(self, data):
+        if isinstance(data, tuple):
+            X, *rest = data
+            return self.inner((self._project(X), *rest))
+        return self.inner(self._project(data))
+
+
 def get_aggregator(metadata, args):
     if args.aggregator == "average":
         return Averager()
@@ -377,6 +410,8 @@ def get_aggregator(metadata, args):
         return Downsampler(args.aggregator_sz)
     elif args.aggregator == "downsample_t":
         return Downsampler(args.aggregator_sz, only_t=True)
+    elif args.aggregator == "downsample_chproj":
+        return ChannelProjDownsampler(args.aggregator_sz, c=getattr(args, "chproj_dim", 64))
     else:
         raise NotImplementedError(f"Aggregator {args.aggregator} not implemented.")
 

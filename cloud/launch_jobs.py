@@ -146,6 +146,7 @@ def run_batch(units, a):
         "MANIFEST_GCS": gcs_manifest, "BUCKET": a.bucket, "DEVICE": "cuda",
         "INPUT_ADAPT": a.input_adapt, "EXP_NAME": a.exp_name,
         "REPO_URL": a.repo_url, "REPO_REF": a.repo_ref,
+        "AGGREGATOR": a.aggregator, "CHPROJ_DIM": str(a.chproj_dim),
     }
     environment = {"variables": env_vars}
     if a.wandb_secret:  # inject WANDB_API_KEY from Secret Manager at runtime
@@ -226,7 +227,10 @@ def main():
     ap.add_argument("--vjepa_pad_t", type=int, default=16)
     # Global token mean-pool (+4 time points) keeps the feature cache ~1 GB/cell;
     # `downsample` preserves 8x8 spatial structure but balloons the cache to ~40 GB/cell.
-    ap.add_argument("--aggregator", default="average", choices=["average", "downsample", "downsample_t"])
+    ap.add_argument("--aggregator", default="average",
+                    choices=["average", "downsample", "downsample_t", "downsample_chproj"])
+    ap.add_argument("--chproj-dim", dest="chproj_dim", type=int, default=64,
+                    help="Projected channel count for aggregator=downsample_chproj.")
     ap.add_argument("--pca", type=int, default=500)
     ap.add_argument("--batch_size", type=int, default=8)
     ap.add_argument("--exp_name", default="vjepa_midway_fit")
